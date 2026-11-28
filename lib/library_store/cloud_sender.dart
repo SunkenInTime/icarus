@@ -448,10 +448,12 @@ final class CloudSender implements LiveResults {
       };
 
   CannotRead? cannotRead(String strategyId) =>
-      _governor.access(strategyId, _inputs)?.cannot;
+      _governor.word(strategyId, _inputs)?.cannot;
 
-  AccessRung? accessRung(String strategyId) =>
-      _governor.access(strategyId, _inputs);
+  AccessChecks? accessChecks(String strategyId) =>
+      _governor.checks(strategyId, _inputs);
+
+  ReadWord? readWord(String strategyId) => _governor.word(strategyId, _inputs);
 
   bool accessCheckStopped(String strategyId) =>
       _governor.accessStopped(strategyId, _inputs);
@@ -1313,7 +1315,7 @@ final class CloudSender implements LiveResults {
   StallExit _restingOn(String id, CloudStrategy cloud, StallExit? reading) =>
       switch (standingOf(cloud.queue)) {
         Standing.deletedOnServer => StallExit.deletedOnServer,
-        Standing.editAccessLost => _governor.access(id, _inputs)?.cannot == null
+        Standing.editAccessLost => _governor.word(id, _inputs)?.cannot == null
             ? StallExit.viewerOnly
             : StallExit.forbidden,
         Standing.upgradeRequired => StallExit.upgrade,
@@ -1693,6 +1695,7 @@ final class CloudSender implements LiveResults {
           marking: marking,
           readIn: session,
           planned: cloud,
+          live: why == _Why.live,
         );
     }
   }
@@ -1710,9 +1713,11 @@ final class CloudSender implements LiveResults {
       case (StoreReadRole.owner || StoreReadRole.editor, _):
         _governor.accessConfirmed(id);
       case (_, _Why.access):
-        _governor.climbAccess(id, snap, null);
+        _governor.senderChecked(id, snap, null);
+      case (StoreReadRole.viewer, _Why.live):
+        _governor.readable(id, snap, WordFrom.liveResult);
       case (StoreReadRole.viewer, _):
-        _governor.viewerAnswered(id, snap);
+        _governor.readable(id, snap, WordFrom.otherRead);
       case (null, _):
         _governor.readAnswered(id, snap);
     }
@@ -1857,6 +1862,7 @@ final class CloudSender implements LiveResults {
     CloudStrategy? marking,
     int? readIn,
     CloudStrategy? planned,
+    bool live = false,
   }) async {
     switch (outcome) {
       case StoreReadRefused(
@@ -1968,7 +1974,11 @@ final class CloudSender implements LiveResults {
         }
         if (disposed) return const _Ended();
         final cannot = CannotRead(why);
-        _governor.climbAccess(id, snap, cannot);
+        if (live) {
+          _governor.unreadable(id, snap, cannot);
+        } else {
+          _governor.senderChecked(id, snap, cannot);
+        }
         final at = _readAgainAt(id, read, snap);
         _note(
           id,

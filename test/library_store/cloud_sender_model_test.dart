@@ -1013,7 +1013,8 @@ final class Model {
               '${entry.id} ${cloud.views[entry.id]?.state} '
                   '${cloud.views[entry.id]?.holds}',
           ].join('; ')}, waiting on ${world.sender.waitingOn(strategy)}, '
-              'access ${world.sender.accessRung(strategy)}; sender '
+              'access ${world.sender.accessChecks(strategy)} '
+              '${world.sender.readWord(strategy)}; sender '
               '${world.sender.view}\n$trail',
         );
         continue;

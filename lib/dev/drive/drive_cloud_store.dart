@@ -11,6 +11,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/library_rows/page_items.dart';
+import 'package:icarus/library_store/call_governor.dart' show WordFrom;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -592,16 +593,19 @@ Future<String> waitStoreHeld(
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) => cloud,
       final other => throw StateError('$strategyId could not be read: $other'),
     };
-    final viewer = _sender(c).accessRung(strategyId);
+    final sender = _sender(c);
+    final viewer = sender.readWord(strategyId);
     if (standingOf(cloud.queue) == Standing.editAccessLost &&
         cloud.queue.entries.isNotEmpty &&
         viewer != null &&
         viewer.cannot == null &&
-        (!bySender || viewer.count > 0)) {
+        (!bySender ||
+            (viewer.from == WordFrom.accessCheck &&
+                viewer.connection == sender.inputs.connection))) {
       return 'CLOUDSTORE $strategyId is held for lost edit access with '
           '${cloud.queue.entries.length} entries unsent, and its page list '
           'said this account can only view it'
-          '${bySender ? ' (the sender\'s own read, ${viewer.count} so far)' : ''}';
+          '${bySender ? ' (the sender\'s own read on connection ${viewer.connection}, check ${sender.accessChecks(strategyId)?.count})' : ''}';
     }
     if (DateTime.now().isAfter(until)) {
       throw StateError(

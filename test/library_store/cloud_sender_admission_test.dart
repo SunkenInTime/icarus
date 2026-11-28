@@ -454,7 +454,7 @@ void main() {
       world.settle(const Duration(seconds: 1));
       final lists = world.server.readCalls.where((call) => call.page == null);
       final refused = lists.length;
-      expect(world.sender.accessRung(strategyId), isNull);
+      expect(world.sender.readWord(strategyId), isNull);
       world.settle(const Duration(seconds: 10));
       expect(lists.length, greaterThan(refused));
     });

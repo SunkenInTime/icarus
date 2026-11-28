@@ -37,12 +37,13 @@ void ownerChangesTheStrategy(World world, String name) {
   );
 }
 
-bool viewerAnswered(World world) =>
-    switch (world.sender.accessRung(strategyId)) {
-      (cannot: null, account: _, signIns: _, connection: _, count: _, at: _) =>
-        true,
-      _ => false,
-    };
+bool viewerAnswered(World world) {
+  final word = world.sender.readWord(strategyId);
+  return word != null && word.cannot == null;
+}
+
+int checksMade(World world) =>
+    world.sender.accessChecks(strategyId)?.count ?? 0;
 
 void refusedAsViewer(World world) {
   world.server.roles[strategyId] = StoreReadRole.viewer;
@@ -67,6 +68,26 @@ void reconnectEvery(World world, int times, Duration apart) {
     world.connection = (world.connection ?? 1) + 1;
     world.settle(apart);
   }
+}
+
+const forbiddenRead = StoreReadRefused(
+  StoreReadRefusal.forbidden,
+  'forbidden',
+  point: stampedWhenAnswered,
+);
+
+int accessReadsBetween(World world, Duration from, Duration to) => [
+      for (final call in world.server.readCalls)
+        if (call.page == null &&
+            call.why == 'edit access was lost' &&
+            call.at!.difference(start) >= from &&
+            call.at!.difference(start) < to)
+          call,
+    ].length;
+
+void liveListNow(World world, String change) {
+  ownerChangesTheStrategy(world, change);
+  world.sender.liveArrived(strategyId, theList, servedAccount, listNow(world));
 }
 
 void main() {
@@ -190,6 +211,118 @@ void main() {
             reason: id,
           );
         }
+      });
+    });
+  });
+
+  group('the count of access checks has two writers', () {
+    test(
+        'six sender reads answered FORBIDDEN stop the check, and a live viewer '
+        'list after that makes no seventh', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        world.server.overrideRead =
+            (call) => call.page == null ? forbiddenRead : null;
+        refusedAsViewer(world);
+        world.settle(const Duration(minutes: 70));
+        expect(listReads(world, from), hasLength(timing.accessReads));
+        expect(world.sender.accessCheckStopped(strategyId), isTrue);
+        world.server.overrideRead = null;
+        liveListNow(world, 'Viewers again');
+        world.settle(const Duration(minutes: 30));
+        expect(world.sender.liveTaken, 1);
+        expect(world.sender.cannotRead(strategyId), isNull);
+        expect(checksMade(world), timing.accessReads);
+        expect(listReads(world, from), hasLength(timing.accessReads));
+      });
+    });
+
+    test(
+        'a live viewer list between each of ten reconnects, with every sender '
+        'read answered FORBIDDEN, makes no more than six reads', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        world.server.overrideRead =
+            (call) => call.page == null ? forbiddenRead : null;
+        refusedAsViewer(world);
+        world.settle(const Duration(minutes: 1));
+        for (var n = 0; n < 10; n++) {
+          world.connection = world.connection! + 1;
+          world.settle(const Duration(seconds: 1));
+          liveListNow(world, 'Between $n');
+          world.settle(const Duration(milliseconds: 1010));
+        }
+        world.settle(const Duration(minutes: 30));
+        expect(
+          listReads(world, from),
+          hasLength(lessThanOrEqualTo(timing.accessReads)),
+        );
+        expect(checksMade(world), listReads(world, from).length);
+      });
+    });
+
+    test(
+        'every kind of answer: the count moves only by the sender\'s own '
+        'access reads, and an editor\'s answer clears it', () {
+      inWorld((world) {
+        final steps = <(String, void Function())>[
+          ('a send refused as a viewer', () => refusedAsViewer(world)),
+          ('a live viewer list', () => liveListNow(world, 'Viewer list')),
+          (
+            'a live page',
+            () => world.sender
+              ..liveOpened(strategyId, const ReadOfPage(pageId))
+              ..liveArrived(strategyId, const ReadOfPage(pageId), servedAccount,
+                  pageNow(world)),
+          ),
+          (
+            'a live list refused as FORBIDDEN',
+            () => world.sender.liveArrived(
+                  strategyId,
+                  theList,
+                  servedAccount,
+                  StoreReadRefused(
+                    StoreReadRefusal.forbidden,
+                    'forbidden',
+                    point: world.server.stamp(),
+                  ),
+                ),
+          ),
+          ('a reconnect', () => world.connection = world.connection! + 1),
+          (
+            'a sender read answered FORBIDDEN',
+            () {
+              world.server.overrideRead =
+                  (call) => call.page == null ? forbiddenRead : null;
+              world.connection = world.connection! + 1;
+            },
+          ),
+          (
+            'a live viewer list again',
+            () {
+              world.server.overrideRead = null;
+              liveListNow(world, 'Viewer list again');
+            },
+          ),
+        ];
+        for (final (name, step) in steps) {
+          final before = checksMade(world);
+          final from = world.async.elapsed;
+          step();
+          world.settle(const Duration(minutes: 1));
+          expect(
+            checksMade(world) - before,
+            accessReadsBetween(world, from, world.async.elapsed),
+            reason: name,
+          );
+        }
+        expect(checksMade(world), greaterThan(0));
+        world.server.roles[strategyId] = StoreReadRole.editor;
+        liveListNow(world, 'Editors again');
+        world.settle(const Duration(minutes: 1));
+        expect(checksMade(world), 0);
+        expect(world.sender.readWord(strategyId), isNull);
+        expect(world.queueLength(), 0);
       });
     });
   });
