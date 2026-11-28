@@ -63,6 +63,9 @@
     "library-save-drawings-local": {
       "fixture": "ICARUS_SIXTY_DRAWINGS_FIXTURE"
     },
+    "rectangle-without-size-local": {
+      "library": true
+    },
     "library-timings-local": {
       "library": true
     },

@@ -1,0 +1,16 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"tapText": "Generated 002"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"shot": "{out}/sized.png"},
+  {"tapIcon": "house300"},
+  {"wait": 4},
+  {"tapText": "Generated 001"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"shot": "{out}/without-size.png"},
+  {"exit": 1}
+]
