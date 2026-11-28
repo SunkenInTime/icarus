@@ -295,6 +295,40 @@ void main() {
   });
 
   test(
+      'a write-back queued behind a save whose answer is lost writes nothing, '
+      'and the library is lost once', () async {
+    await ageTheStore();
+    final firstFrame = Completer<void>();
+    final gate = CommitGate();
+    final container = await open(firstFrame: firstFrame.future, gate: gate);
+    const library = LocalLibrary();
+    int notServedReports() => [
+          for (final entry in appProviderContainer.read(inAppDebugProvider))
+            if (entry.source == 'main.libraryOnStore') entry,
+        ].length;
+    final reportsBefore = notServedReports();
+
+    gate.doubtNext = true;
+    final renaming = library.renameStrategy(
+      library.storedStrategy('a')!,
+      'Renamed',
+    );
+    firstFrame.complete();
+    await renaming;
+    final stopAt = DateTime.now().add(const Duration(seconds: 5));
+    while (container.read(libraryOnStoreProvider) is! LibraryNotServed &&
+        DateTime.now().isBefore(stopAt)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    await settle();
+
+    expect(container.read(libraryOnStoreProvider), isA<LibraryNotServed>());
+    expect(gate.commits, 1);
+    expect(notServedReports() - reportsBefore, 1);
+    container.dispose();
+  });
+
+  test(
       'a store closed before the first frame writes nothing back, and the '
       'next open rebuilds again', () async {
     await ageTheStore();

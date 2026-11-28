@@ -100,13 +100,15 @@ Future<LibraryOnStore> _serve(
           )) {
             case StoreLibraryLoaded(:final library):
               LocalLibrary.source = LibraryInStore(library);
-              unawaited(firstFrame.then((_) async {
-                if (LocalLibrary.source
-                    case LibraryInStore(library: final served)
-                    when identical(served, library)) {
-                  await library.writeBackRebuiltSummaries();
-                }
-              }));
+              unawaited(firstFrame.then(
+                (_) => library.writeBackRebuiltSummaries(
+                  stillServed: () => switch (LocalLibrary.source) {
+                    LibraryInStore(library: final served) =>
+                      identical(served, library),
+                    _ => false,
+                  },
+                ),
+              ));
               return container.read(libraryOnStoreProvider.notifier).state =
                   LibraryServedFromStore(loading.elapsed);
             case StoreLibraryNotLoaded(why: final notLoaded):

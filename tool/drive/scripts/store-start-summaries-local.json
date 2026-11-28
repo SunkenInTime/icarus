@@ -1,6 +1,4 @@
 [
-  {"wait": 3},
-  {"expectMigration": {}},
-  {"wait": 5},
+  {"expectMigration": {"served": true, "rebuiltAtOpen": 3, "notWrittenBack": 0}, "seconds": 15},
   {"exit": 1}
 ]

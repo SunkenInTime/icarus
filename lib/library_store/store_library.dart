@@ -281,6 +281,7 @@ final class StoreLibrary {
 
   final LibraryStore _store;
   final void Function(String why) _lost;
+  var _isLost = false;
   final StoreRecords<StrategyData> strategies;
   final StoreRecords<Folder> folders;
   Future<void> _turn = Future.value();
@@ -317,9 +318,15 @@ final class StoreLibrary {
     return written.future;
   }
 
-  Future<SummariesWrittenBack> writeBackRebuiltSummaries() {
+  Future<SummariesWrittenBack> writeBackRebuiltSummaries({
+    required bool Function() stillServed,
+  }) {
     final written = Completer<SummariesWrittenBack>();
     _turn = _turn.then((_) async {
+      if (_isLost || !stillServed()) {
+        written.complete(const NothingToSave());
+        return;
+      }
       final result = await _store.writeBackRebuiltSummaries();
       switch (result) {
         case Saved() || NothingToSave():
@@ -348,9 +355,15 @@ final class StoreLibrary {
     return written.future;
   }
 
+  void _becomeLost(String why) {
+    if (_isLost) return;
+    _isLost = true;
+    _lost(why);
+  }
+
   void _lostIfShut() {
     if (_store.library case LibraryShut(:final failure)) {
-      _lost('the store is shut: $failure');
+      _becomeLost('the store is shut: $failure');
     }
   }
 
@@ -363,7 +376,7 @@ final class StoreLibrary {
           inFlight.replay();
         }
       case _ReadNot(:final why):
-        _lost(why);
+        _becomeLost(why);
     }
   }
 

@@ -11,6 +11,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -24,6 +25,7 @@ import 'hive_scratch.dart';
 
 final _resultsToMakeNewer = Platform.environment['ICARUS_NEWER_RESULTS_STORE'];
 final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
+final _agedStoreOut = Platform.environment['ICARUS_AGED_STORE_FIXTURE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
 final _sixtyDrawingsOut =
     Platform.environment['ICARUS_SIXTY_DRAWINGS_FIXTURE'];
@@ -88,6 +90,34 @@ Future<void> writeStoreHoldsLibraryFixture(Directory out) async {
     isA<Saved<LibraryEdited, Object>>(),
   );
   await store.close();
+  await engine.close();
+}
+
+Future<void> writeAgedStoreFixture(Directory out) async {
+  final strategies = [
+    for (var index = 0; index < 3; index++)
+      generatedStrategy(Optionals.unset)
+          .copyWith(id: 'aged-$index', name: 'Aged $index'),
+  ];
+  await openScratchHive(out, strategies: strategies);
+  await Hive.close();
+  final file = libraryStoreFile(out.path);
+  file.parent.createSync(recursive: true);
+  final engine = SqliteEngine(file.path);
+  final store = switch (await LibraryStore.open(engine, canRead: appCanRead)) {
+    StoreOpened(:final store) => store,
+    StoreNotOpened(:final problem) => fail('$problem'),
+  };
+  expect(
+    await migrateLibraryIntoStore(
+      store,
+      strategies: strategies,
+      folders: const [],
+    ),
+    isA<MigrationFinishedNow>(),
+  );
+  await store.close();
+  expect(await ageSummaries(engine), strategies.length);
   await engine.close();
 }
 
@@ -255,6 +285,19 @@ void main() {
     },
     skip: _storeToAge == null
         ? 'set ICARUS_AGE_STORE to a scratch copy of a library store'
+        : false,
+  );
+
+  test(
+    'writes a library already moved into a store whose summaries the build '
+    'before wrote',
+    () async {
+      final out = Directory(_agedStoreOut!)..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeAgedStoreFixture(out);
+    },
+    skip: _agedStoreOut == null
+        ? 'set ICARUS_AGED_STORE_FIXTURE to a new folder'
         : false,
   );
 }

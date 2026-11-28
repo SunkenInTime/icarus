@@ -455,6 +455,9 @@ final class LibraryStore {
 
   int get summariesRebuiltAtOpen => _summariesRebuiltAtOpen;
 
+  int get summariesNotWrittenBack =>
+      _unsaved.where((digest) => _summaries[digest]?.sync is KeptHere).length;
+
   int rowsCountedFor(String strategyPublicId) =>
       _strategies[digestOf(strategyPublicId)]?.rowsCounted ?? 0;
 
