@@ -767,7 +767,6 @@ final class SlowSenderStore extends SenderStore {
         written.effects,
         session: null,
         notApplied: written.notApplied,
-        alreadyHeld: written.alreadyHeld,
       );
     }
     return written;

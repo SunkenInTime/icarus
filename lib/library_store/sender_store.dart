@@ -65,20 +65,37 @@ sealed class Written {
   const Written();
 }
 
+sealed class NotApplied {
+  const NotApplied();
+}
+
+final class QueueDeclined extends NotApplied {
+  const QueueDeclined(this.why);
+
+  final Inapplicable why;
+
+  @override
+  String toString() => '$why';
+}
+
+final class EditGoesThroughCommit extends NotApplied {
+  const EditGoesThroughCommit();
+
+  @override
+  String toString() => 'an edit goes through commit';
+}
+
 final class WrittenWith extends Written {
   WrittenWith(
     List<QueueEffect> effects, {
     required this.session,
-    required List<String> notApplied,
-    required List<QueueEvent> alreadyHeld,
+    required List<NotApplied> notApplied,
   })  : effects = List.unmodifiable(effects),
-        notApplied = List.unmodifiable(notApplied),
-        alreadyHeld = List.unmodifiable(alreadyHeld);
+        notApplied = List.unmodifiable(notApplied);
 
   final List<QueueEffect> effects;
   final int? session;
-  final List<String> notApplied;
-  final List<QueueEvent> alreadyHeld;
+  final List<NotApplied> notApplied;
 }
 
 final class WriteTroubled extends Written {
@@ -372,8 +389,7 @@ base class SenderStore {
     switch (result) {
       case Saved(:final value):
         final effects = <QueueEffect>[];
-        final notApplied = <String>[];
-        final alreadyHeld = <QueueEvent>[];
+        final notApplied = <NotApplied>[];
         for (final (at, outcome) in value.outcomes.indexed) {
           switch (outcome) {
             case ReportApplied(effects: final applied):
@@ -381,35 +397,20 @@ base class SenderStore {
             case ReportNotApplicable(effects: final opened)
                 when onConnection != null && at == 0:
               effects.addAll(opened);
-            case ReportNotApplicable(why: SameResult(), effects: final opened):
-              effects.addAll(opened);
-              alreadyHeld.add(events[at]);
             case ReportNotApplicable(:final why, effects: final opened):
               effects.addAll(opened);
-              notApplied.add('$why');
+              notApplied.add(QueueDeclined(why));
               report(EventNotApplied(strategyId, '$why'));
             case EditsGoThroughCommit():
-              notApplied.add('an edit goes through commit');
+              notApplied.add(const EditGoesThroughCommit());
           }
         }
         report(
           EventsWritten(strategyId, events, batch: batch, effects: effects),
         );
-        return _writtenWith(
-          strategyId,
-          effects,
-          notApplied,
-          alreadyHeld,
-          readSession,
-        );
+        return _writtenWith(strategyId, effects, notApplied, readSession);
       case NothingToSave():
-        return _writtenWith(
-          strategyId,
-          const [],
-          const [],
-          const [],
-          readSession,
-        );
+        return _writtenWith(strategyId, const [], const [], readSession);
       case Refused(reason: final ResultWithoutLife reason):
         return _troubled(strategyId, ResultNotStored('$reason'));
       case Refused(reason: final ResultOutOfPlace reason):
@@ -457,17 +458,11 @@ base class SenderStore {
   Future<Written> _writtenWith(
     String strategyId,
     List<QueueEffect> effects,
-    List<String> notApplied,
-    List<QueueEvent> alreadyHeld,
+    List<NotApplied> notApplied,
     bool readSession,
   ) async {
     if (!readSession) {
-      return WrittenWith(
-        effects,
-        session: null,
-        notApplied: notApplied,
-        alreadyHeld: alreadyHeld,
-      );
+      return WrittenWith(effects, session: null, notApplied: notApplied);
     }
     final Reading<StrategyContent> reading;
     try {
@@ -483,7 +478,6 @@ base class SenderStore {
         _ => null,
       },
       notApplied: notApplied,
-      alreadyHeld: alreadyHeld,
     );
   }
 
@@ -500,7 +494,7 @@ base class SenderStore {
     }
     switch (result) {
       case Saved() || NothingToSave():
-        return _writtenWith(strategyId, const [], const [], const [], true);
+        return _writtenWith(strategyId, const [], const [], true);
       case Refused(:final reason):
         return _troubled(
           strategyId,

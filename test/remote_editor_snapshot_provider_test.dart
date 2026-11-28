@@ -453,6 +453,7 @@ void main() {
       messenger.setMockMethodCallHandler(pathProvider, (_) async => dir.path);
       addTearDown(() async {
         messenger.setMockMethodCallHandler(pathProvider, null);
+        await pumpEventQueue();
         await dir.delete(recursive: true);
       });
       for (final id in ['image-a', 'image-b']) {
@@ -665,7 +666,7 @@ void main() {
       final queue = _RecordingOpQueue();
       final (container, _) = await desktop(repository, queue: () => queue);
       final disk = await openUnitHive();
-      addTearDown(Hive.close);
+      addTearDown(closeUnitHive);
       final local = generatedStrategy(Optionals.set).copyWith(id: 'local');
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(local.id, local);

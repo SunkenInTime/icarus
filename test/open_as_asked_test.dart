@@ -78,7 +78,7 @@ void main() {
   tearDown(() async {
     expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
         isA<Changed>());
-    await Hive.close();
+    await closeUnitHive();
   });
 
   test(

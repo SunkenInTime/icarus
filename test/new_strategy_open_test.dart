@@ -27,6 +27,7 @@ void main() {
   appProviderContainer = container;
   final strategies = container.read(strategyProvider.notifier);
   setUp(openUnitHive);
+  tearDown(closeUnitHive);
 
   testWidgets(
       'New Strategy opens the strategy it made when something closed above '

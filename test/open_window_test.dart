@@ -62,7 +62,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_pathProvider, gate.answer);
   });
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   StrategyData stored(String id) {
     final strategy = generatedStrategy(Optionals.set).copyWith(

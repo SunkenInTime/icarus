@@ -554,7 +554,7 @@ void main() {
     appProviderContainer = container;
   });
   setUp(() async => openUnitHive());
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   test(
       'every public method of the item providers is an edit below, or says '
