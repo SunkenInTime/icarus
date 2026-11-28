@@ -1,11 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
+import 'package:icarus/collab/collab_models.dart' show RemotePageSnapshot;
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus_library/icarus_library.dart';
 
 import 'server_fixtures.dart'
-    show openStore, pageList, pageSnapshot, serverRows, servedAccount;
+    show
+        openStore,
+        pageList,
+        pageSnapshot,
+        secondPage,
+        serverRows,
+        servedAccount;
 
 const point = ResultPoint(client: 1, connection: 1, snapshot: 1);
 
@@ -74,6 +81,187 @@ void main() {
     final moved = serverRows(agentAt: const Offset(300, 400));
     final lines = await readBack(store, serving(moved));
     expect(problems(lines), [matches(RegExp(r'^CLOUDSTORE .*: item \S+: '))]);
+    await store.close();
+  });
+
+  Future<LibraryStore> storeHoldingTheFirstOfTwoPages(
+    MemoryStorage storage,
+  ) async {
+    final rows = serverRows();
+    final store = await openStore(storage);
+    final header = switch (pageListRead(pageList(rows, more: [secondPage()]))) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError(problem),
+    };
+    final page = switch (pageRead(pageSnapshot(rows), appCanRead)) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError(problem),
+    };
+    await store.addCloudStrategy(
+      servedAccount,
+      StampedRead(header, point),
+      [StampedRead(page, point)],
+    );
+    return store;
+  }
+
+  ({ServerReads reads, List<String> pagesRead}) servingTwoPages(
+    StrategyRowSet rows,
+  ) {
+    final second = secondPage();
+    final pagesRead = <String>[];
+    return (
+      pagesRead: pagesRead,
+      reads: (
+        pageList: (_) async => pageList(rows, more: [second]),
+        page: (_, pageId) async {
+          pagesRead.add(pageId);
+          return pageId == second.page.publicId
+              ? RemotePageSnapshot(
+                  page: second.page,
+                  content: second.content,
+                  elements: const [],
+                  lineups: const [],
+                  assetsById: const {},
+                )
+              : pageSnapshot(rows);
+        },
+      ),
+    );
+  }
+
+  List<String> textOf(List<CloudStoreLine> lines) =>
+      [for (final line in lines) line.text];
+
+  test(
+      'a page the store never held is left out, named, and not read from the '
+      'server; a held page that differs still fails', () async {
+    final store = await storeHoldingTheFirstOfTwoPages(MemoryStorage());
+    final server = servingTwoPages(serverRows(agentAt: const Offset(300, 400)));
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [matches(RegExp(r'^CLOUDSTORE .*: item \S+: '))]);
+    expect(
+      textOf(lines),
+      contains(endsWith('1 pages the store never held, not compared: p2')),
+    );
+    expect(server.pagesRead, isNot(contains('p2')));
+    await store.close();
+  });
+
+  test(
+      'with a page left out, an equal comparison says only the pages '
+      'compared are equal, and how many', () async {
+    final store = await storeHoldingTheFirstOfTwoPages(MemoryStorage());
+    final lines = await readBack(store, servingTwoPages(serverRows()).reads);
+    expect(problems(lines), isEmpty);
+    expect(textOf(lines), [
+      endsWith('1 pages the store never held, not compared: p2'),
+      endsWith('the 1 pages compared equal to the server\'s copy read as '
+          'account-a, 1 of 2 pages not compared'),
+    ]);
+    expect(textOf(lines), isNot(contains(contains(', 2 pages'))));
+    await store.close();
+  });
+
+  test(
+      'a strategy held in the queue is never left partly compared or called '
+      'equal: with pages the store gives no content for, it is not compared',
+      () async {
+    final storage = MemoryStorage();
+    await (await storeHoldingTheFirstOfTwoPages(storage)).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    contents[strategyArea(serverRows().strategy.publicId)]![
+        'pending/${'7'.padLeft(16, '0')}'] = '{"version":99}';
+    final store = await openStore(MemoryStorage(contents));
+    expect(
+      switch (await store.readStrategy(serverRows().strategy.publicId)) {
+        Found(:final value) => value.sync,
+        _ => null,
+      },
+      isA<CloudHeld>(),
+    );
+    final server = servingTwoPages(serverRows());
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [
+      allOf(
+        contains('got no verdict'),
+        contains('held in the queue, and the store gives no content for '
+            'p1, p2'),
+      ),
+    ]);
+    expect(textOf(lines), isNot(contains(contains('equal'))));
+    expect(server.pagesRead, isEmpty);
+    await store.close();
+  });
+
+  test(
+      'a page with stored item rows that reads as not read (saved before its '
+      'pictures were kept) is never skipped: a teammate\'s change on it fails '
+      'the comparison', () async {
+    final storage = MemoryStorage();
+    await (await storeHoldingTheFirstOfTwoPages(storage)).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    contents[strategyArea(serverRows().strategy.publicId)]!
+        .removeWhere((key, _) => key.startsWith('assets/'));
+    final store = await openStore(MemoryStorage(contents));
+    expect(
+      switch (await store.readPage(serverRows().strategy.publicId, 'p1')) {
+        Found(:final value) => value.content,
+        _ => null,
+      },
+      isA<ContentNotRead>(),
+    );
+    final server = servingTwoPages(serverRows(agentAt: const Offset(300, 400)));
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [
+      allOf(
+        contains('no verdict'),
+        contains('page p1: the store holds rows or owes a read for it'),
+      ),
+    ]);
+    expect(
+      textOf(lines),
+      contains(endsWith('1 pages the store never held, not compared: p2')),
+    );
+    expect(textOf(lines), isNot(contains(contains('equal'))));
+    await store.close();
+  });
+
+  test(
+      'a page holding only a row of a kind this build cannot read is never '
+      'skipped: it has no verdict, and the run fails', () async {
+    final storage = MemoryStorage();
+    await (await storeHoldingTheFirstOfTwoPages(storage)).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    contents[strategyArea(serverRows().strategy.publicId)]![
+            'content/${digestOf('p2')}/z/${digestOf('a-newer-kind')}'] =
+        '{"kind":"newer"}';
+    final store = await openStore(MemoryStorage(contents));
+    expect(
+      switch (await store.readPage(serverRows().strategy.publicId, 'p2')) {
+        Found(:final value) => value.content,
+        _ => null,
+      },
+      isA<ContentNotRead>(),
+    );
+    final server = servingTwoPages(serverRows());
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [
+      allOf(
+        contains('no verdict'),
+        contains('page p2: the store holds rows or owes a read for it'),
+      ),
+    ]);
+    expect(textOf(lines), isNot(contains(contains('never held'))));
     await store.close();
   });
 

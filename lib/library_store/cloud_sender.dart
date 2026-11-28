@@ -1152,7 +1152,7 @@ final class CloudSender implements LiveResults {
     _forgetResolved(id, cloud, snap);
     _lastSeen[id] = cloud;
     _countClockHeldByLive(id, cloud, now, snap);
-    if (_unreadPages(cloud).isEmpty) {
+    if (_unreadPages(id, cloud).isEmpty) {
       _unread.remove(id);
     } else {
       _unread.add(id);
@@ -1366,7 +1366,7 @@ final class CloudSender implements LiveResults {
     for (final read in _governor.owedFresh(id)) {
       yield (planned: (read: read, why: _Why.need), wantedAt: now);
     }
-    for (final page in _unreadPages(cloud)) {
+    for (final page in _unreadPages(id, cloud)) {
       yield (planned: (read: ReadOfPage(page), why: _Why.adopt), wantedAt: now);
     }
     for (final (page, at) in retiring.wanted(
@@ -1398,8 +1398,13 @@ final class CloudSender implements LiveResults {
           cloud.queue.shown.pageRead(page) is ReadRefused,
       };
 
-  static List<String> _unreadPages(CloudStrategy cloud) =>
-      cloud.queue.shown.pagesToRead.toList();
+  List<String> _unreadPages(String id, CloudStrategy cloud) {
+    final shown = cloud.queue.shown;
+    return [
+      for (final page in shown.pagesToRead)
+        if ((_live[(id, ReadOfPage(page))]?.watchers ?? 0) > 0) page,
+    ];
+  }
 
   static ReadOf _readOf(ResultSubject subject) => switch (subject) {
         PageListResult() => const ReadOfList(),

@@ -18,8 +18,9 @@ enum StallExit {
   firstRead(
     title: 'A strategy is read for the first time, or again after it was '
         'replaced',
-    waitsFor: 'every page the page list shows',
-    calls: 'the page list, then each page, one per step',
+    waitsFor: 'the page list; then a page only when it is shown, when work '
+        'names it, or when a replaced life owes it',
+    calls: 'the page list, then each such page, one per step',
     onScreen: null,
     goesAgain: 'each page that is read; a page that will not read climbs the '
         'ladder as a lost read',
