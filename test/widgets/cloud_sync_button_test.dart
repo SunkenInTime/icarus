@@ -30,6 +30,7 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/strategy/lineup_group_changes.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/cloud_sync_button.dart';
@@ -430,6 +431,132 @@ final _english = lookupAppLocalizations(const Locale('en'));
 void main() {
   setUp(() => StrategyView.onScreen.value = 1);
   tearDown(() => StrategyView.onScreen.value = 0);
+  group('a store-owned strategy reads its chip from store ahead of server', () {
+    StrategySaveState storeOwned(
+      StoreAheadOfServer ahead, {
+      bool canvasAhead = false,
+    }) =>
+        StrategySaveState(
+          isDirty: canvasAhead,
+          isSaving: false,
+          hasPendingCloudSync: false,
+          cloudSyncError: null,
+          hasPendingMediaSync: false,
+          mediaSyncErrorCount: 0,
+          lastPersistedAt: null,
+          storeOwned: StoreOwnedSave(
+            canvasAheadOfStore: canvasAhead,
+            storeAheadOfServer: ahead,
+          ),
+        );
+
+    Future<(CloudSyncStatus, int)> chipFor(
+      StrategySaveState saveState, {
+      bool connected = true,
+      ({DateTime? copiedAt})? shownCopy,
+      CloudMediaUploadQueueState? mediaQueueState,
+    }) async {
+      final container = _createContainer(
+        connected: connected,
+        saveState: saveState,
+        sessionStatus: ConvexAuthStatus.ready,
+        shownCopy: shownCopy,
+        mediaQueueState: mediaQueueState,
+      );
+      addTearDown(container.dispose);
+      await container.read(convexConnectionProvider.future);
+      return (
+        container.read(cloudSyncStatusProvider),
+        container.read(openStrategyUnsentChangesProvider),
+      );
+    }
+
+    test('nothing ahead is synced', () async {
+      expect(
+        await chipFor(storeOwned(const StoreMatchesServer())),
+        (CloudSyncStatus.synced, 0),
+      );
+    });
+
+    test('work the old queue never held is still sending', () async {
+      expect(
+        await chipFor(storeOwned(const StoreSending(2))),
+        (CloudSyncStatus.syncing, 2),
+      );
+    });
+
+    test('offline, it counts what the store holds unsent', () async {
+      expect(
+        await chipFor(storeOwned(const StoreSending(2)), connected: false),
+        (CloudSyncStatus.offline, 2),
+      );
+    });
+
+    test('work refused by the server needs attention', () async {
+      expect(
+        (await chipFor(storeOwned(const StoreNeedsUser(1)))).$1,
+        CloudSyncStatus.attention,
+      );
+    });
+
+    test('a store it cannot vouch for is never synced', () async {
+      expect(
+        (await chipFor(storeOwned(const StoreUnverified()))).$1,
+        CloudSyncStatus.syncing,
+      );
+    });
+
+    test('a canvas ahead of the store is not synced yet', () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer(), canvasAhead: true),
+        ))
+            .$1,
+        CloudSyncStatus.syncing,
+      );
+    });
+
+    test("a page drawn from this computer's copy is not synced", () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          shownCopy: (copiedAt: null),
+        ))
+            .$1,
+        CloudSyncStatus.offline,
+      );
+    });
+
+    test('a media outbox not read back yet is not synced', () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          mediaQueueState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durableLoaded: false,
+          ),
+        ))
+            .$1,
+        CloudSyncStatus.syncing,
+      );
+    });
+
+    test('a media write it could not confirm needs attention', () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          mediaQueueState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durabilityError: 'Media work could not be saved on this device.',
+          ),
+        ))
+            .$1,
+        CloudSyncStatus.attention,
+      );
+    });
+  });
   test('restored active-strategy media renders as syncing', () {
     final container = _createContainer(
       mediaQueueState: CloudMediaUploadQueueState(

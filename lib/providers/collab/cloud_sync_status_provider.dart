@@ -9,6 +9,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 enum CloudSyncStatus { synced, editing, syncing, offline, attention }
@@ -48,9 +49,41 @@ final editorShownCopyProvider = Provider<({DateTime? copiedAt})?>((ref) {
   return (copiedAt: page?.copiedAt);
 });
 
+typedef _QueueFacts = ({
+  bool needsAttention,
+  String? error,
+  bool isSending,
+  bool hasWorkWaiting,
+  bool durableLoaded,
+});
+
 final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
+  if (saveState.storeOwned case final owned?) {
+    return _cloudSyncStatus(ref, saveState, (
+      needsAttention: owned.storeAheadOfServer is StoreNeedsUser,
+      error: null,
+      isSending: owned.canvasAheadOfStore,
+      hasWorkWaiting: owned.storeAheadOfServer is! StoreMatchesServer,
+      durableLoaded: true,
+    ));
+  }
   final opQueueState = ref.watch(strategyOpQueueProvider);
+  return _cloudSyncStatus(ref, saveState, (
+    needsAttention: opQueueState.needsAttention ||
+        opQueueState.accountOutbox.needsAttention,
+    error: saveState.cloudSyncError,
+    isSending: saveState.isSaving || saveState.hasPendingCloudSync,
+    hasWorkWaiting: opQueueState.accountOutbox.hasWork,
+    durableLoaded: opQueueState.durableLoaded,
+  ));
+});
+
+CloudSyncStatus _cloudSyncStatus(
+  Ref ref,
+  StrategySaveState saveState,
+  _QueueFacts queue,
+) {
   final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
   final strategy = ref.watch(strategyProvider);
   final activeMediaJobs = mediaQueueState.jobsForStrategy(
@@ -72,8 +105,7 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (ref.watch(clientUpgradeRequiredProvider)) {
     return CloudSyncStatus.attention;
   }
-  if (opQueueState.needsAttention ||
-      opQueueState.accountOutbox.needsAttention ||
+  if (queue.needsAttention ||
       saveState.mediaSyncErrorCount > 0 ||
       accountMediaErrorCount > 0) {
     return CloudSyncStatus.attention;
@@ -92,19 +124,18 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (sessionStatus == ConvexAuthStatus.incident) {
     return CloudSyncStatus.attention;
   }
-  if (saveState.cloudSyncError != null) {
+  if (queue.error != null) {
     return CloudSyncStatus.attention;
   }
   if (hasTextDrafts) {
     return CloudSyncStatus.editing;
   }
-  if (saveState.isSaving ||
-      saveState.hasPendingCloudSync ||
+  if (queue.isSending ||
       saveState.hasPendingMediaSync ||
       activeMediaJobs.isNotEmpty ||
-      opQueueState.accountOutbox.hasWork ||
+      queue.hasWorkWaiting ||
       mediaQueueState.jobs.isNotEmpty ||
-      !opQueueState.durableLoaded ||
+      !queue.durableLoaded ||
       !mediaQueueState.durableLoaded) {
     return CloudSyncStatus.syncing;
   }
@@ -114,13 +145,22 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
     return CloudSyncStatus.syncing;
   }
   return CloudSyncStatus.synced;
-});
+}
 
 /// How many outbox records of the open cloud strategy, for the signed-in
 /// account, hold changes that have not landed.
 final openStrategyUnsentChangesProvider = Provider<int>((ref) {
   final strategy = ref.watch(strategyProvider);
   if (strategy.source != StrategySource.cloud) return 0;
+  final owned = ref.watch(
+    strategySaveStateProvider.select((state) => state.storeOwned),
+  );
+  if (owned != null) {
+    return switch (owned.storeAheadOfServer) {
+      StoreSending(:final ops) || StoreNeedsUser(:final ops) => ops,
+      StoreMatchesServer() || StoreUnverified() => 0,
+    };
+  }
   return ref.watch(strategyOpQueueProvider.select(
     (queue) =>
         queue

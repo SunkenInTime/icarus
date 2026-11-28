@@ -3,6 +3,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 
 class StrategySaveState {
@@ -14,6 +15,7 @@ class StrategySaveState {
     required this.hasPendingMediaSync,
     required this.mediaSyncErrorCount,
     required this.lastPersistedAt,
+    this.storeOwned,
   });
 
   final bool isDirty;
@@ -23,6 +25,8 @@ class StrategySaveState {
   final bool hasPendingMediaSync;
   final int mediaSyncErrorCount;
   final DateTime? lastPersistedAt;
+
+  final StoreOwnedSave? storeOwned;
 
   bool get canLeaveSafely =>
       !isDirty &&
@@ -41,6 +45,7 @@ class StrategySaveState {
     int? mediaSyncErrorCount,
     bool clearCloudSyncError = false,
     DateTime? lastPersistedAt,
+    StoreOwnedSave? storeOwned,
   }) {
     return StrategySaveState(
       isDirty: isDirty ?? this.isDirty,
@@ -51,6 +56,7 @@ class StrategySaveState {
       hasPendingMediaSync: hasPendingMediaSync ?? this.hasPendingMediaSync,
       mediaSyncErrorCount: mediaSyncErrorCount ?? this.mediaSyncErrorCount,
       lastPersistedAt: lastPersistedAt ?? this.lastPersistedAt,
+      storeOwned: storeOwned ?? this.storeOwned,
     );
   }
 }
@@ -68,6 +74,7 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
       if (source != StrategySource.cloud) {
         return;
       }
+      if (state.storeOwned != null) return;
 
       final hasPendingSync =
           next.isFlushing || next.pending.isNotEmpty || _canvasHeld;
@@ -100,6 +107,13 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
       final strategyJobs = next.jobsForStrategy(strategyId);
       final failedJobs = strategyJobs.where((job) => job.isFailed).length;
       final hasPendingMedia = strategyJobs.isNotEmpty;
+      if (state.storeOwned != null) {
+        state = state.copyWith(
+          hasPendingMediaSync: hasPendingMedia,
+          mediaSyncErrorCount: failedJobs,
+        );
+        return;
+      }
       final hasPendingCloudSync =
           state.hasPendingCloudSync || hasPendingMedia || _canvasHeld;
       state = state.copyWith(
@@ -152,6 +166,35 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
     state = state.copyWith(
       isDirty: true,
       clearCloudSyncError: true,
+      storeOwned: state.storeOwned?.copyWith(canvasAheadOfStore: true),
+    );
+  }
+
+  void beginStoreOwned() {
+    state = state.copyWith(
+      storeOwned: StoreOwnedSave(
+        canvasAheadOfStore: state.isDirty,
+        storeAheadOfServer: const StoreUnverified(),
+      ),
+    );
+  }
+
+  void noteStoreAheadOfServer(StoreAheadOfServer ahead) {
+    final owned = state.storeOwned;
+    if (owned == null) return;
+    state = state.copyWith(
+      storeOwned: owned.copyWith(storeAheadOfServer: ahead),
+    );
+  }
+
+  void noteStoreHoldsCanvas({required int marksBefore}) {
+    final owned = state.storeOwned;
+    if (owned == null) return;
+    final editedSince = _dirtyMarks != marksBefore;
+    state = state.copyWith(
+      isDirty: editedSince,
+      lastPersistedAt: editedSince ? null : DateTime.now(),
+      storeOwned: owned.copyWith(canvasAheadOfStore: editedSince),
     );
   }
 

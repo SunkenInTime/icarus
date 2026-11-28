@@ -1503,6 +1503,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   bool _canSafelyReapplyRemotePage() {
     final saveState = ref.read(strategySaveStateProvider);
+    if (saveState.storeOwned case final owned?) {
+      return !_isResolvingConflicts &&
+          state.deletedPage == null &&
+          !state.isApplyingPage &&
+          state.transitionState == PageTransitionState.idle &&
+          ref.read(editorHeldEntitiesProvider) != null &&
+          !owned.canvasAheadOfStore;
+    }
     return !_isResolvingConflicts &&
         state.deletedPage == null &&
         !state.isApplyingPage &&
