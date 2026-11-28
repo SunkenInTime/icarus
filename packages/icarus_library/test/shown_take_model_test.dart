@@ -136,7 +136,7 @@ String? decisionCase(RowDecision decision) => switch (decision) {
 
 Map<String, int> runSeed(int seed, int steps) {
   final observed = Observed();
-  final server = RandomServer(Random(seed));
+  final server = RandomServer(Random(seed), staleOneIn: 3);
   final delivered = <String, int>{};
   void count(String what) => delivered[what] = (delivered[what] ?? 0) + 1;
   var cached = Shown.nothing;
@@ -241,7 +241,6 @@ void main() {
     for (final what in const [
       'an item seen on another page',
       'an item seen with another payload on its page in its life',
-      'a trashed page row delivered',
       'deleted',
       'restored',
       'life changed at the same revision',

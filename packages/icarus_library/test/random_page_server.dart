@@ -107,7 +107,7 @@ final class ServerResult {
 }
 
 final class RandomServer {
-  RandomServer(this.random) {
+  RandomServer(this.random, {this.staleOneIn = 6}) {
     for (var i = 0; i < 12; i++) {
       held.add(
         HeldItem(
@@ -121,6 +121,7 @@ final class RandomServer {
   }
 
   final Random random;
+  final int staleOneIn;
   final held = <HeldItem>[];
   final trashed = <String>{};
   final sortIndexOf = {for (final (i, page) in serverPages.indexed) page: i};
@@ -244,16 +245,6 @@ final class RandomServer {
     unknownFields: jsonObject(const {'createdAt': fixtureLife}),
   );
 
-  PendingTrashedPage trashedPageRow(String page) => PendingTrashedPage(
-    publicId: page,
-    strategyPublicId: strategyId,
-    name: page,
-    sortIndex: sortIndexOf[page]!,
-    isAttack: true,
-    revision: revisionOf[page]!,
-    unknownFields: jsonObject(const {'createdAt': fixtureLife}),
-  );
-
   StrategyRowSet rows() => strategyRows(
     pages: [for (final page in livePages) pageRow(page)],
     elements: [
@@ -305,15 +296,14 @@ final class RandomServer {
   }
 
   ServerResult read() {
-    if (random.nextInt(6) == 0) {
+    if (random.nextInt(staleOneIn) == 0) {
       if (_stale((base) => base is! HeaderRead, 'stale read')
           case final stale?) {
         return stale;
       }
     }
     final page = serverPages[random.nextInt(serverPages.length)];
-    final trashedRow = trashed.contains(page) && random.nextBool();
-    if (trashed.contains(page) && !trashedRow) {
+    if (trashed.contains(page)) {
       _made('trashed page read');
       return ServerResult(PageGone(page), [
         'trashed page read',
@@ -331,13 +321,10 @@ final class RandomServer {
     ];
     final leftOut = included.length < onPage.length;
     if (leftOut) _made('rows left out of a read');
-    final pageRowRead = trashedRow ? trashedPageRow(page) : pageRow(page);
-    final readTrashed = pageRowRead is TrashedPage;
-    if (readTrashed) _made('trashed page row read');
     final rows = [for (final item in included) item.row];
     final result = ServerResult(
       PageRead(
-        page: pageRowRead,
+        page: pageRow(page),
         elements: [
           for (final row in rows)
             if (row is ElementRow) row,
@@ -349,7 +336,6 @@ final class RandomServer {
       ),
       [
         if (leftOut) 'rows left out of a read',
-        if (readTrashed) 'trashed page row read',
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],
@@ -367,8 +353,7 @@ final class Observed {
   void _count(String what) => counts[what] = (counts[what] ?? 0) + 1;
 
   void see(ArrivedBase base) {
-    if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
-      if (page is TrashedPage) _count('a trashed page row delivered');
+    if (base case PageRead(:final elements, :final lineupGroups)) {
       for (final row in <Row>[...elements, ...lineupGroups]) {
         final (id, pageId, payload) = switch (row) {
           ElementRow(:final publicId, :final pagePublicId) => (

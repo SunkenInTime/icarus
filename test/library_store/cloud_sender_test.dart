@@ -3076,8 +3076,9 @@ void main() {
 
     test(
         'a page delete whose page results the disk refuses once each is '
-        'written from the result in hand, read once more after each late '
-        'write, and the refusals are not counted toward could not resolve', () {
+        'written from the result in hand and read once more after a late '
+        'write, except once its page reads not found; the refusals are not '
+        'counted toward could not resolve', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -3093,14 +3094,12 @@ void main() {
           final before = server.readCalls.length;
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
-          expect(
-            readsAfter(world, before).where((read) => read == 'page p2'),
-            hasLength(3),
-          );
-          expect(
-            world.readsRecorded().where((read) => read == 'page p2'),
-            hasLength(3),
-          );
+          expect(readsAfter(world, before), ['list', 'page p2', 'page p2']);
+          expect(world.readsRecorded(), [
+            'the page list',
+            'page p2',
+            'page p2',
+          ]);
           expect(world.sender.couldNotResolve(strategyId), isNull);
           expect(
             [for (final call in server.calls) ...call.opIds],

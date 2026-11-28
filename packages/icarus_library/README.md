@@ -1855,8 +1855,11 @@ and `_judge` is the only place an outgoing revision is chosen.
   when no result has shown it (a teammate may have moved it since the editor
   drew it).
   It needs the user when a result of this session shows the row otherwise,
-  when a result of its page no longer holds a row that results showed or this
-  device added, or when its page is gone (`RowPageGone`). A solo session
+  or when a result of its page no longer holds a row that results showed or
+  this device added. Once its page is gone it is sent instead, and the
+  server's answer settles it: `PAGE_DELETED` for a page in the trash
+  (`RefusedAsPageDeleted`), not found for a row purged with its page. A solo
+  session
   waits only after a session opens: such an op made behind landed work, or
   behind work queued in an earlier session, waits for its row's first result
   in the new session.

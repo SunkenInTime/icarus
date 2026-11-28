@@ -426,12 +426,25 @@ StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
 
 HeaderRead headerReadOf(StrategyRowSet rows) => HeaderRead(
   strategy: rows.strategy,
+  pages: [
+    for (final page in rows.pages)
+      if (page is! TrashedPage) page,
+  ],
+  settings: [
+    for (final row in rows.settings)
+      if (rows.page(row.pagePublicId) is! TrashedPage) row,
+  ],
+);
+
+HeaderRead headerWithTrashedRows(StrategyRowSet rows) => HeaderRead(
+  strategy: rows.strategy,
   pages: rows.pages.toList(),
   settings: rows.settings.toList(),
 );
 
 ArrivedBase pageReadOf(StrategyRows rows, String page) =>
     switch (rows.page(page)) {
+      TrashedPage() => PageGone(page),
       final row? => PageRead(
         page: row,
         elements: rows.elementsOn(page).toList(),

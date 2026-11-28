@@ -2358,8 +2358,8 @@ void main() {
       expect(drawn.element('e1')?.pagePublicId, 'page-b');
     });
 
-    test('an edit waiting for a row\'s result needs the user when its page is '
-        'gone', () {
+    test('an edit waiting for a row\'s result is sent once its page is gone, '
+        'and the server\'s answer reaches the user', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -2377,33 +2377,51 @@ void main() {
       client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
       expect(client.view('whole').sendable, isFalse);
       client.arrive(const PageGone('page-a'));
-      expect(stateOf(client, 'whole'), const NeedsUser(RowPageGone()));
-    });
-
-    test('a rename of a new page needs the user when a page list leaves the '
-        'page out', () {
-      final server = Server();
-      final client = online();
-      client.edit(pageAdd('add', 'page-c', expected: 1, sortIndex: 2));
-      sendAndAnswer(client, server, ['add']);
-      client.edit(
-        onVisible(
-          client.visible,
-          const PagePatchOp(
-            opId: 'rename',
-            pagePublicId: 'page-c',
-            expectedPageRevision: 1,
-            name: 'Mine',
-          ),
+      expect(client.view('whole').sendable, isTrue);
+      server.rows = withoutPage(server.rows, 'page-a');
+      sendAndAnswer(client, server, ['whole']);
+      expect(
+        stateOf(client, 'whole'),
+        isA<NeedsUser>().having(
+          (state) => state.reason,
+          'reason',
+          isA<RefusedByServer>(),
         ),
       );
-      server.rows = withOp(
-        server.rows,
-        pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
-      );
-      client.arrive(headerReadOf(server.rows));
-      expect(stateOf(client, 'rename'), const NeedsUser(RowPageGone()));
     });
+
+    test(
+      'a rename of a new page a teammate put in the trash is sent once a '
+      'page list leaves the page out, and is refused as its page deleted',
+      () {
+        final server = Server();
+        final client = online();
+        client.edit(pageAdd('add', 'page-c', expected: 1, sortIndex: 2));
+        sendAndAnswer(client, server, ['add']);
+        client.edit(
+          onVisible(
+            client.visible,
+            const PagePatchOp(
+              opId: 'rename',
+              pagePublicId: 'page-c',
+              expectedPageRevision: 1,
+              name: 'Mine',
+            ),
+          ),
+        );
+        server.rows = withOp(
+          server.rows,
+          pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
+        );
+        client.arrive(headerReadOf(server.rows));
+        expect(client.view('rename').sendable, isTrue);
+        sendAndAnswer(client, server, ['rename']);
+        expect(
+          stateOf(client, 'rename'),
+          const NeedsUser(RefusedAsPageDeleted()),
+        );
+      },
+    );
 
     test('moving an element off a page and deleting the page asks nothing', () {
       final server = Server();
@@ -2545,7 +2563,7 @@ void main() {
       );
       client.arrive(const PageGone('page-a'));
       client.arrive(headerReadOf(server.rows));
-      expect(stateOf(client, 'rename'), isNot(const NeedsUser(RowPageGone())));
+      expect(stateOf(client, 'rename'), isNot(isA<NeedsUser>()));
     });
 
     StrategyRowSet withoutE1(StrategyRowSet rows) => StrategyRowSet(
@@ -3010,7 +3028,8 @@ void main() {
     expect(client.view('whole').sendable, isTrue);
   });
 
-  test('an undo whose page a teammate deleted asks, with that reason', () {
+  test('an undo whose page a teammate deleted and the trash purged is sent, '
+      'and the server\'s failure reaches the user', () {
     final server = Server();
     final client = online();
     final drawn = client.visible;
@@ -3024,7 +3043,16 @@ void main() {
       'page-a',
     );
     client.read(server.rows);
-    expect(stateOf(client, 'back'), const NeedsUser(RowPageGone()));
+    expect(client.view('back').sendable, isTrue);
+    sendAndAnswer(client, server, ['back']);
+    expect(
+      stateOf(client, 'back'),
+      isA<NeedsUser>().having(
+        (state) => state.reason,
+        'reason',
+        isA<RefusedByServer>(),
+      ),
+    );
   });
 
   group('what makes held results stale', () {

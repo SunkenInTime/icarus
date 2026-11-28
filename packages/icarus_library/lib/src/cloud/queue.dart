@@ -488,19 +488,6 @@ final class RefusedAsPageDeleted extends UserReason {
   String toString() => 'refused because its page was deleted';
 }
 
-final class RowPageGone extends UserReason {
-  const RowPageGone();
-
-  @override
-  bool operator ==(Object other) => other is RowPageGone;
-
-  @override
-  int get hashCode => (RowPageGone).hashCode;
-
-  @override
-  String toString() => 'its page is gone';
-}
-
 final class ChangedUnseen extends UserReason {
   const ChangedUnseen();
 
@@ -2421,9 +2408,7 @@ final class _AwaitRow extends _Verdict {
 }
 
 final class _AskUser extends _Verdict {
-  const _AskUser([this.reason = const ChangedUnseen()]);
-
-  final UserReason reason;
+  const _AskUser();
 }
 
 enum _Writes { wholeRow, putBack, fields, other }
@@ -2533,7 +2518,7 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (entry.scope case OnPage(
         :final pagePublicId,
       ) when _pageGone(queue.shown, pagePublicId)) {
-        return const _AskUser(RowPageGone());
+        return _NameAt(authored);
       }
       final seen = entry.authored;
       final delete = queue.landed
@@ -2642,9 +2627,7 @@ _Verdict _wholeBehindOwn(
     (_, _, Moving(:final from)) => from,
     _ => null,
   };
-  if (page != null && _pageGone(shown, page)) {
-    return const _AskUser(RowPageGone());
-  }
+  if (page != null && _pageGone(shown, page)) return _NameAt(authored);
   final renumbering =
       row is PageTarget &&
       queue.landed.any(
@@ -3074,8 +3057,7 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
         ChangedUnseen() ||
         ChangedSinceDrawn() ||
         WindowClosed() ||
-        WrittenLongAgo() ||
-        RowPageGone(),
+        WrittenLongAgo(),
   ) =>
     true,
   _ => false,

@@ -16,7 +16,7 @@ An op names the revision the user's edit was made against. The device keeps, per
 
 - An op made with nothing of this device's ahead of it on its row goes at its authored revision, and the server decides.
 - A field merge that stays on its page names its fields and goes at its authored revision once no earlier edit of this device on that row is still unanswered; this device's landed work on the row never holds it, and the server merges it field by field. A merge that names another page is written whole by the server, so it is gated like a whole-row write.
-- Any other op made behind this device's queued or landed work on its row, a nothing-to-do answer included, goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, when a result of its page no longer holds a row that results showed or this device added, or when its page is gone.
+- Any other op made behind this device's queued or landed work on its row, a nothing-to-do answer included, goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, or when a result of its page no longer holds a row that results showed or this device added. Once its page is gone it is sent, and the server's answer settles it.
 - A page add, reorder or delete answers only the strategy revision, so the pages it renumbers are not justified by the answer: a page rename behind one waits for a page list.
 - An undo of a delete goes without asking only over this device's delete answered at the revision it predicted, with the tombstone as the user saw it, within 29 days of first sending that delete.
 - An entry that carries a revision check and was written more than 29 days ago needs the user before it is sent, sent before or not, because a purged tombstone can come back at revision 1.
@@ -26,7 +26,7 @@ An op names the revision the user's edit was made against. The device keeps, per
 
 - An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. A batch refused whole (upgrade, sign-in, access) was never tried, so it does not start that clock, even when the refusal arrives after the attempt was given up. A transition that finds the 29 days passed records it, even when it changes nothing else; views show only what was recorded, and `look` records and returns the views of the queue it returns. Once recorded, the entry waits for the user and is never sent again.
 - The queue cannot stop a send it already handed over. The sender must give an attempt up as unanswered (`TransportFailed`) within `sendGiveUpAfter` (one hour) of claiming it, well inside the one-day margin between the queue's window and the server's memory. An open attempt shows as sending until the sender does so.
-- Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later, or until a result about the page its op names, at or after its answer by order and server time, shows that page gone: that page's own page-gone, or a list newer than the page's own result that no longer has it. An item edit that names no page is not retired this way, as an answer names a revision and not where the row is. A result about another page never retires work, and while the strategy itself is gone nothing retires. A delete this device made stays known as its own until a result shows a later revision of the row or its page is gone that way. An undo onto a page that is gone asks the user, with that reason, whether or not this device's delete is still drawn.
+- Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later, or until a result about the page its op names, at or after its answer by order and server time, shows that page gone: that page's own page-gone, or a list newer than the page's own result that no longer has it. An item edit that names no page is not retired this way, as an answer names a revision and not where the row is. A result about another page never retires work, and while the strategy itself is gone nothing retires. A delete this device made stays known as its own until a result shows a later revision of the row or its page is gone that way. An undo onto a page that is gone is sent, and the server's answer reaches the user.
 
 ## Which copy of a row a result leaves held
 
@@ -718,34 +718,6 @@ Starts as: needs user: changed by someone else since the user saw it.
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; stops drawing del as landed; sets 1 aside |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: PAGE_DELETED; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
-
-## needs user: an edit waiting for a row whose page is gone
-
-Starts as: needs user: its page is gone.
-
-| Event | Result |
-| --- | --- |
-| user edits another item | z: waiting |
-| user edits the same item | w: waiting, behind x (sameRow) |
-| app restarted, same build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
-| app restarted, new build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
-| connection lost | unchanged |
-| connection returned | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
-| server time held | unchanged |
-| account changed | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
-| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
-| user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
-| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
-| result: header as it is | x: waiting, awaiting a result for ElementTarget(e1) |
-| result: page-a with the item at revision 2 | page list owed; defers page-a for the page list |
-| result: page-a with the item as this device wrote it at 2 | page list owed; defers page-a for the page list |
-| result: page-b gone | page-b not read this session |
-| result: strategy gone | standing deletedOnServer |
-| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
-| result: page-a of another life | page list owed; defers page-a for the page list |
-| result: page list of a later strategy life | x: set aside; page-b not read this session; stops drawing first as landed; sets 1 aside |
-
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: PAGE_DELETED; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## a format this build no longer sends
 

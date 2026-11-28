@@ -499,7 +499,7 @@ void main() {
     final trashed = initialRows().withRows([
       page('page-b', sortIndex: 1, deleted: true, revision: 2),
     ]);
-    await arriveIn(store, headerReadOf(trashed), tick());
+    await arriveIn(store, headerWithTrashedRows(trashed), tick());
     expect((await syncOf(store)).queue.shown.trashed.keys, ['page-b']);
     await expectAgree(store);
     await store.close();
