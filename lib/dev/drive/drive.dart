@@ -1721,6 +1721,7 @@ const _icons = {
   'image': LucideIcons.image,
   'clipboard': LucideIcons.clipboard,
   'plus': LucideIcons.plus,
+  'archiveRestore': LucideIcons.archiveRestore,
 };
 
 // Stands in for the OS save dialog: answers with dir/fileName, or dir/typedName
