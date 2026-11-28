@@ -237,7 +237,7 @@ class StrategyTileDetails extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(data.mapName),
+                    OverflowTooltipText(data.mapName),
                   ],
                 ),
               ),
