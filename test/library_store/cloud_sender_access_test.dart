@@ -99,12 +99,13 @@ void main() {
         world.server.overrideRead = (call) => call.page == null ? held : null;
         world.addServedStrategy();
         final from = world.async.elapsed;
+        final taken = world.sender.liveTaken;
         world.sender
           ..liveOpened(strategyId, theList)
           ..liveArrived(strategyId, theList, servedAccount, held);
         world.settle(const Duration(minutes: 1));
         expect(listReads(world, from), isEmpty);
-        expect(world.sender.liveTaken, 1);
+        expect(world.sender.liveTaken - taken, 1);
       }, addStrategy: false);
     });
 
@@ -228,9 +229,10 @@ void main() {
         expect(listReads(world, from), hasLength(timing.accessReads));
         expect(world.sender.accessCheckStopped(strategyId), isTrue);
         world.server.overrideRead = null;
+        final taken = world.sender.liveTaken;
         liveListNow(world, 'Viewers again');
         world.settle(const Duration(minutes: 30));
-        expect(world.sender.liveTaken, 1);
+        expect(world.sender.liveTaken - taken, 1);
         expect(world.sender.cannotRead(strategyId), isNull);
         expect(checksMade(world), timing.accessReads);
         expect(listReads(world, from), hasLength(timing.accessReads));
@@ -363,6 +365,7 @@ void main() {
           expect(listReads(world, from), hasLength(1), reason: '$live');
           expect(viewerAnswered(world), isTrue, reason: '$live');
           ownerChangesTheStrategy(world, 'Still viewers');
+          final taken = world.sender.liveTaken;
           world.sender
             ..liveOpened(strategyId, live)
             ..liveArrived(
@@ -372,7 +375,7 @@ void main() {
               live is ReadOfList ? listNow(world) : pageNow(world),
             );
           world.settle(const Duration(minutes: 1));
-          expect(world.sender.liveTaken, 1, reason: '$live');
+          expect(world.sender.liveTaken - taken, 1, reason: '$live');
           expect(viewerAnswered(world), isTrue, reason: '$live');
           expect(listReads(world, from), hasLength(1), reason: '$live');
         });
