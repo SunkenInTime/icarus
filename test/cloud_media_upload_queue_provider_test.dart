@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -269,6 +271,20 @@ DurableOutboxRecord _durableRecord(StrategyOp op) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory strategyFiles;
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  setUpAll(() async {
+    strategyFiles =
+        await Directory.systemTemp.createTemp('icarus-media-queue-files-');
+  });
+  setUp(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (_) async => strategyFiles.path));
+  tearDownAll(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+    await strategyFiles.delete(recursive: true);
+  });
 
   test('processing while signed out finds no job and does not throw', () async {
     // Signed out, the queue's job list is the shared `const []`; sorting it

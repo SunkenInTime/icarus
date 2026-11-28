@@ -6,6 +6,7 @@ import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce/src/binary/binary_reader_impl.dart';
@@ -333,6 +334,10 @@ void main() {
   // caption is held by the JSON and Hive tests above, which export reads.
   test('Hive reopen, a real .ica and a library backup round-trip it', () async {
     final directory = await Directory.systemTemp.createTemp('icarus-caption-');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
+    addTearDown(() => messenger.setMockMethodCallHandler(_pathProvider, null));
     Hive.init(directory.path);
     final container = ProviderContainer(
       overrides: [authProvider.overrideWith(_SignedOut.new)],
@@ -379,3 +384,5 @@ void main() {
     box.values.forEach(_expectCaptions);
   });
 }
+
+const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');

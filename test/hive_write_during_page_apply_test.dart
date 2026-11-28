@@ -38,7 +38,7 @@ void main() {
       Folder(name: 'Retakes', id: 'folder-1', dateCreated: DateTime.utc(2026)),
     );
   });
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   test(
     'with the store switch off, a Hive save that lands as an open applies its '

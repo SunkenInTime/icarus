@@ -271,7 +271,7 @@ void main() {
   late Directory disk;
   setUpAll(() async => disk = await openUnitHive());
   tearDown(() => strategies.held = null);
-  tearDownAll(Hive.close);
+  tearDownAll(closeUnitHive);
 
   testWidgets(
       'the window keeps asking before it closes while an editor is on '

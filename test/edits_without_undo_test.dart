@@ -42,7 +42,7 @@ void main() {
     appProviderContainer = container;
   });
   setUp(() async => openUnitHive());
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   var opened = 0;
   Future<String> open() async {

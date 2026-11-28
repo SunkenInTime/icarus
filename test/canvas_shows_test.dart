@@ -86,7 +86,7 @@ void main() {
   });
   tearDown(() async {
     await container.read(strategyProvider.notifier).clearCurrentStrategy();
-    await Hive.close();
+    await closeUnitHive();
   });
 
   StrategyProvider editor() => container.read(strategyProvider.notifier);
