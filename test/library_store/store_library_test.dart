@@ -376,6 +376,83 @@ void main() {
     });
   });
 
+  test(
+      'removing the first drawing of a page writes no element row, and the '
+      'page reads back with its drawings in the same order', () async {
+    await _library();
+    final gate = CommitGate();
+    final storage = MemoryStorage();
+    final store = await moved(GatedEngine(MemoryEngine(storage), gate));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    expect(page.drawingData.length, greaterThanOrEqualTo(2));
+    final removed = stored.copyWith(pages: [
+      page.copyWith(drawingData: [...page.drawingData.skip(1)]),
+      ...stored.pages.skip(1),
+    ]);
+    gate.puts.clear();
+
+    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
+
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      isEmpty,
+    );
+    await store.close();
+    final back = await reopened(storage);
+    expect(
+      [for (final d in back.strategies['a']!.pages.first.drawingData) d.id],
+      [for (final d in removed.pages.first.drawingData) d.id],
+    );
+  });
+
+  test(
+      'after a removal, a drawing added later takes the number after the last '
+      'and is the only element row written', () async {
+    await _library();
+    final gate = CommitGate();
+    final storage = MemoryStorage();
+    final store = await moved(GatedEngine(MemoryEngine(storage), gate));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    final removed = stored.copyWith(pages: [
+      page.copyWith(drawingData: [...page.drawingData.skip(1)]),
+      ...stored.pages.skip(1),
+    ]);
+    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
+    final first = page.drawingData.first;
+    final added = removed.copyWith(pages: [
+      removed.pages.first.copyWith(
+        drawingData: [...removed.pages.first.drawingData, first],
+      ),
+      ...removed.pages.skip(1),
+    ]);
+    gate.puts.clear();
+
+    expect(await library.savePageOnScreen(added), isA<LibraryWritten>());
+
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      hasLength(1),
+    );
+    await store.close();
+    final back = await reopened(storage);
+    expect(
+      [for (final d in back.strategies['a']!.pages.first.drawingData) d.id],
+      [for (final d in added.pages.first.drawingData) d.id],
+    );
+  });
+
   group('two writes in flight', () {
     late CommitGate gate;
     late MemoryStorage storage;
