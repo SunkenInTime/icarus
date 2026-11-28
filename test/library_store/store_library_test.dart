@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/maps.dart';
@@ -374,6 +375,129 @@ void main() {
             color: FolderColor.blue,
           ));
     });
+  });
+
+  test(
+      'removing the first drawing of a page writes no element row, and the '
+      'page reads back with its drawings in the same order', () async {
+    await _library();
+    final gate = CommitGate();
+    final storage = MemoryStorage();
+    final store = await moved(GatedEngine(MemoryEngine(storage), gate));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    expect(page.drawingData.length, greaterThanOrEqualTo(2));
+    final removed = stored.copyWith(pages: [
+      page.copyWith(drawingData: [...page.drawingData.skip(1)]),
+      ...stored.pages.skip(1),
+    ]);
+    gate.puts.clear();
+
+    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
+
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      isEmpty,
+    );
+    await store.close();
+    final back = await reopened(storage);
+    expect(
+      [for (final d in back.strategies['a']!.pages.first.drawingData) d.id],
+      [for (final d in removed.pages.first.drawingData) d.id],
+    );
+  });
+
+  test(
+      'a drawing raised to the top keeps the number that save gave it, so '
+      'removing the drawing below it afterwards writes no element row',
+      () async {
+    await _library();
+    final gate = CommitGate();
+    final storage = MemoryStorage();
+    final store = await moved(GatedEngine(MemoryEngine(storage), gate));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    expect(page.drawingData.length, greaterThanOrEqualTo(3));
+    StrategyData withDrawings(List<DrawingElement> drawings) =>
+        stored.copyWith(pages: [
+          page.copyWith(drawingData: drawings),
+          ...stored.pages.skip(1),
+        ]);
+    final [first, ...rest] = page.drawingData;
+    gate.puts.clear();
+
+    expect(
+      await library.savePageOnScreen(withDrawings([...rest, first])),
+      isA<LibraryWritten>(),
+    );
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      hasLength(1),
+    );
+    final removed = withDrawings([...rest.take(rest.length - 1), first]);
+    gate.puts.clear();
+
+    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
+
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      isEmpty,
+    );
+    await store.close();
+    final back = await reopened(storage);
+    expect(
+      [for (final d in back.strategies['a']!.pages.first.drawingData) d.id],
+      [for (final d in removed.pages.first.drawingData) d.id],
+    );
+  });
+
+  test(
+      'a strategy deleted and added again under the same id numbers its '
+      'first save from nothing', () async {
+    await _library();
+    final store = await moved(MemoryEngine(MemoryStorage()));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    final [first, ...rest] = page.drawingData;
+    final raised = stored.copyWith(pages: [
+      page.copyWith(drawingData: [...rest, first]),
+      ...stored.pages.skip(1),
+    ]);
+    expect(await library.savePageOnScreen(raised), isA<LibraryWritten>());
+    expect(await library.deleteStrategy('a'), isA<LibraryWritten>());
+
+    expect(await library.addStrategy(raised), isA<LibraryWritten>());
+
+    final drawingIds = {for (final drawing in page.drawingData) drawing.id};
+    final numbers = switch (await readStoredRows(store, 'a')) {
+      StoredRowsRead(:final rows) => {
+          for (final element in rows.elements)
+            if (element case ReadableElementRow(:final publicId, :final sortIndex)
+                when drawingIds.contains(publicId))
+              publicId: sortIndex,
+        },
+      final other => fail('the strategy reads as $other'),
+    };
+    expect(
+      [for (final drawing in raised.pages.first.drawingData) numbers[drawing.id]],
+      [for (var i = 0; i < drawingIds.length; i++) i],
+    );
+    await store.close();
   });
 
   group('two writes in flight', () {
