@@ -30,6 +30,7 @@ ServerComparison comparedWith({
         pages: 1,
         unjudged: unjudged,
         differences: differences,
+        compared: 1,
       ),
     );
 

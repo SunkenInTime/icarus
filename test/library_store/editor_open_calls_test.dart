@@ -126,7 +126,7 @@ void main() {
   test(
       'the editor in send mode on today\'s path, as the transport sees it: a '
       'first open reads and watches the page list and the shown page, and '
-      'the store reads nothing; a later open the same four; a page read and '
+      'the store reads the list and no page; a later open the editor\'s four; a page read and '
       'watched one read and one watch; an edit one send; and every watch '
       'closed once the editor is gone', () {
     inWorld(
@@ -184,7 +184,7 @@ void main() {
           'subscribeStamped page:getSnapshot',
         ];
         expect(first.editor, open);
-        expect(first.sender, isEmpty);
+        expect(first.sender, ['read list']);
         expect(later.editor, open);
         expect(later.sender, isEmpty);
         expect(switched.editor, [

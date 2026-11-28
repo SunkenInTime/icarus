@@ -362,9 +362,7 @@ enum StallExit {
             'could not resolve; a retry asks for one reconnect per answer of '
             'the watch',
         liveNoFirstResult => 'one wait of '
-            '${timing.firstLiveResult.inSeconds} s per watch and connection; '
-            'a take-up waits ${timing.firstLiveResult.inSeconds} s from its '
-            'first ask, and only while the editor shows the strategy',
+            '${timing.firstLiveResult.inSeconds} s per watch and connection',
         landedWork => '${timing.unresolvedRounds} reads that show nothing '
             'new, then shown as could not resolve and read every '
             '${timing.readAgainAfter.inMinutes} min',

@@ -182,7 +182,7 @@ final class NothingToRead extends ReadOutlook {
   const NothingToRead();
 }
 
-typedef _Request = ({Account account, int signOuts, DateTime at});
+typedef _Request = ({Account account, int signOuts});
 
 sealed class _Candidate {
   const _Candidate();
@@ -296,27 +296,6 @@ final class _Live {
   }
 }
 
-sealed class _Adoption {
-  const _Adoption();
-}
-
-final class _TakeLive extends _Adoption {
-  const _TakeLive(this.result, this.outcome);
-
-  final _LiveResult result;
-  final StoreReadAnswered outcome;
-}
-
-final class _WaitForLive extends _Adoption {
-  const _WaitForLive(this.until);
-
-  final DateTime until;
-}
-
-final class _ReadToAdopt extends _Adoption {
-  const _ReadToAdopt();
-}
-
 sealed class _LiveGate {
   const _LiveGate();
 }
@@ -359,7 +338,6 @@ final class CloudSender implements LiveResults {
   })  : _store = store,
         _canRead = canRead ?? appCanRead,
         _reconnect = reconnect ?? (() async {}),
-        _editorShows = editorShows ?? (() => null),
         _governor = CallGovernor(
           reads: reads,
           send: send,
@@ -376,7 +354,6 @@ final class CloudSender implements LiveResults {
 
   final Future<({int client, int connection})> Function() _generation;
   final Future<void> Function() _reconnect;
-  final String? Function() _editorShows;
   final CanRead _canRead;
 
   Future<({int client, int connection})> _lookUpGeneration() =>
@@ -872,11 +849,7 @@ final class CloudSender implements LiveResults {
   void adopt(String strategyId) {
     final account = _inputs.account;
     if (account == null) return;
-    _wanted[strategyId] = (
-      account: account,
-      signOuts: _inputs.signOuts,
-      at: _wanted[strategyId]?.at ?? _clock(),
-    );
+    _wanted[strategyId] = (account: account, signOuts: _inputs.signOuts);
     wake();
   }
 
@@ -1043,26 +1016,14 @@ final class CloudSender implements LiveResults {
     }
     const read = ReadOfList();
     final under = readsUnder(snap);
-    StoreReadOutcome? outcome;
-    DateTime? started;
-    _LiveResult? fromLive;
+    final StoreReadOutcome outcome;
+    final DateTime started;
     final kept = _governor.heldFor(id, read, under);
     switch (kept) {
       case (outcome: final held, started: final at, under: _, readIn: _):
         outcome = held;
         started = at;
       case null:
-        switch (await _adoptionFromLive(id, account, now)) {
-          case _TakeLive(:final result, outcome: final answered):
-            outcome = answered;
-            started = result.at;
-            fromLive = result;
-          case _WaitForLive(:final until):
-            return _Skipped(StallExit.liveNoFirstResult, until);
-          case _ReadToAdopt():
-            break;
-        }
-        if (outcome != null && started != null) break;
         switch (await _issue(id, account, read, snap, _Why.adopt)) {
           case NotYet(:final at, :final why):
             return _Skipped(why ?? StallExit.firstRead, at);
@@ -1110,11 +1071,6 @@ final class CloudSender implements LiveResults {
             return _troubled(id, trouble);
           case WrittenWith(:final session):
             _governor.written(id, read, late: kept != null);
-            if (fromLive != null) {
-              _live[(id, read)]?.written(fromLive);
-              _forgetEnded(id, read);
-              liveTaken++;
-            }
             restarted.add(id);
             if (_inputs != snap || session == null) return const _Restart();
             _wanted.remove(id);
@@ -1143,43 +1099,6 @@ final class CloudSender implements LiveResults {
       case final other:
         return _readRefused(id, account, read, other, snap);
     }
-  }
-
-  Future<_Adoption> _adoptionFromLive(
-    String id,
-    Account account,
-    DateTime now,
-  ) async {
-    const read = ReadOfList();
-    if (_live[(id, read)] case _Live(:final pending?) && final live) {
-      if (await _takesUp(id, account, pending) case final answered?) {
-        return _TakeLive(pending, answered);
-      }
-      live.written(pending);
-      _forgetEnded(id, read);
-      _note(id, 'the live page list cannot take it up; it is read');
-      return const _ReadToAdopt();
-    }
-    final until = _wanted[id]?.at.add(_timing.firstLiveResult);
-    if (until != null && until.isAfter(now) && _editorShows() == id) {
-      return _WaitForLive(until);
-    }
-    return const _ReadToAdopt();
-  }
-
-  Future<StoreReadAnswered?> _takesUp(
-    String id,
-    Account account,
-    _LiveResult pending,
-  ) async {
-    if (pending.account != account) return null;
-    final outcome = await _outcomeOf(id, const ReadOfList(), pending.answer);
-    if (outcome case final StoreReadAnswered answered
-        when answered.base is HeaderRead &&
-            await _onCurrentConnection(answered.point)) {
-      return answered;
-    }
-    return null;
   }
 
   Future<_Step?> _endedTakeUp(

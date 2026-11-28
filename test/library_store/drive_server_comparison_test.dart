@@ -197,6 +197,42 @@ void main() {
     await store.close();
   });
 
+  test(
+      'a page with stored item rows that reads as not read (saved before its '
+      'pictures were kept) is never skipped: a teammate\'s change on it fails '
+      'the comparison', () async {
+    final storage = MemoryStorage();
+    await (await storeHoldingTheFirstOfTwoPages(storage)).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    contents[strategyArea(serverRows().strategy.publicId)]!
+        .removeWhere((key, _) => key.startsWith('assets/'));
+    final store = await openStore(MemoryStorage(contents));
+    expect(
+      switch (await store.readPage(serverRows().strategy.publicId, 'p1')) {
+        Found(:final value) => value.content,
+        _ => null,
+      },
+      isA<ContentNotRead>(),
+    );
+    final server = servingTwoPages(serverRows(agentAt: const Offset(300, 400)));
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [
+      allOf(
+        contains('no verdict'),
+        contains('page p1: the store holds rows or owes a read for it'),
+      ),
+    ]);
+    expect(
+      textOf(lines),
+      contains(endsWith('1 pages the store never held, not compared: p2')),
+    );
+    expect(textOf(lines), isNot(contains(contains('equal'))));
+    await store.close();
+  });
+
   test('a server read that fails is a verdict, not a thrown error', () async {
     final store = await storeHolding(serverRows());
     final lines = await readBack(
