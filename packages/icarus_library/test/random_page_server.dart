@@ -107,7 +107,7 @@ final class ServerResult {
 }
 
 final class RandomServer {
-  RandomServer(this.random) {
+  RandomServer(this.random, {this.staleOneIn = 6}) {
     for (var i = 0; i < 12; i++) {
       held.add(
         HeldItem(
@@ -121,6 +121,7 @@ final class RandomServer {
   }
 
   final Random random;
+  final int staleOneIn;
   final held = <HeldItem>[];
   final trashed = <String>{};
   final sortIndexOf = {for (final (i, page) in serverPages.indexed) page: i};
@@ -280,6 +281,7 @@ final class RandomServer {
     if (older.isEmpty) return null;
     final stale = older[random.nextInt(older.length)];
     _made(what);
+    if (stale.base is PageGone) _made('stale not-found read');
     return ServerResult(stale.base, [what], read: stale.read);
   }
 
@@ -305,7 +307,7 @@ final class RandomServer {
   }
 
   ServerResult read() {
-    if (random.nextInt(6) == 0) {
+    if (random.nextInt(staleOneIn) == 0) {
       if (_stale((base) => base is! HeaderRead, 'stale read')
           case final stale?) {
         return stale;
@@ -315,10 +317,12 @@ final class RandomServer {
     final trashedRow = trashed.contains(page) && random.nextBool();
     if (trashed.contains(page) && !trashedRow) {
       _made('trashed page read');
-      return ServerResult(PageGone(page), [
+      final gone = ServerResult(PageGone(page), [
         'trashed page read',
         ..._deliveredPage(page),
       ], read: ++reads);
+      snapshots.add(gone);
+      return gone;
     }
     final leaving = random.nextInt(5) == 0;
     final onPage = [
