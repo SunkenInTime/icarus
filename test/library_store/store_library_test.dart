@@ -20,6 +20,7 @@ import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/json.dart' show canonicalJson;
 
 import '../library_rows/generated_strategies.dart';
 import 'gated_engine.dart';
@@ -381,6 +382,43 @@ void main() {
   });
 
   test(
+      'a strategy whose stored summary has gone stale is listed as its own '
+      'rows say', () async {
+    await _library();
+    final storage = MemoryStorage();
+    await (await moved(MemoryEngine(storage))).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    final library = contents['library']!;
+    for (final MapEntry(:key, :value) in [...library.entries]) {
+      if (!key.startsWith('summary/')) continue;
+      final summary = jsonDecode(value) as Map<String, Object?>;
+      if (summary['publicId'] != 'b') continue;
+      library[key] = canonicalJson({
+        ...summary,
+        'folderPublicId': 'folder-2',
+        'name': 'Stale',
+      });
+    }
+    final store = await _open(MemoryEngine(MemoryStorage(contents)));
+    final storedNames = switch (store.library) {
+      LibraryOpen(:final list) => {
+          for (final summary in list.strategies) summary.publicId: summary.name,
+        },
+      LibraryShut(:final failure) => fail('$failure'),
+    };
+    expect(storedNames['b'], 'Stale');
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+
+    final listed = LocalLibraryView().strategy('b')!;
+    expect(listed.name, 'Strategy b');
+    expect(listed.folderId, 'folder-1');
+    await store.close();
+  });
+
+  test(
       'with the library sorted by last edited, renaming one strategy and '
       'moving another leaves the order as it was, on Hive and on the store '
       'alike', () async {
@@ -641,6 +679,35 @@ void main() {
       await store.close();
       _expectSame(await reopened(storage), now, 'after a reopen');
       expect(now.strategies['a']!.name, 'Y');
+    });
+
+    test(
+        'a rename the store refuses, then a move it saves: the library and '
+        'its listing end as the store does, with the old name in the new '
+        'folder', () async {
+      const library = LocalLibrary();
+      final before = library.storedStrategy('a')!.name;
+      gate
+        ..hold()
+        ..failNext = true;
+
+      final renaming =
+          library.renameStrategy(library.storedStrategy('a')!, 'Refused');
+      final moving =
+          library.moveStrategy(library.storedStrategy('a')!, 'folder-1');
+      gate.release();
+
+      expect(await renaming, isA<LibraryWriteFailed>());
+      expect(await moving, isA<LibraryWritten>());
+      expect(lost, isEmpty);
+      expect(library.storedStrategy('a')!.name, before);
+      expect(library.storedStrategy('a')!.folderID, 'folder-1');
+      final listed = LocalLibraryView().strategy('a')!;
+      expect(listed.name, before);
+      expect(listed.folderId, 'folder-1');
+      final now = _seen();
+      await store.close();
+      _expectSame(await reopened(storage), now, 'after a reopen');
     });
 
     test(

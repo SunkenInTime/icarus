@@ -182,6 +182,7 @@ Future<_Read> _readKept(
   Map<String, Folder> folders,
 ) async {
   final strategies = <String, StrategyData>{};
+  final summaries = <String, StrategySummary>{};
   final numbers = <String, Map<String, int>>{};
   for (final summary in kept) {
     final id = summary.publicId;
@@ -190,6 +191,7 @@ Future<_Read> _readKept(
       case StoredRowsRead(:final rows, written: WrittenAt(:final version))
           when version <= Settings.versionNumber:
         read = strategyOfRows(rows, versionNumber: version);
+        summaries[id] = summaryOfRows(rows);
         numbers[id] = _numbersOf(rows);
       case StoredRowsRead(written: WrittenAt(:final version)):
         return _ReadNot(
@@ -219,7 +221,7 @@ Future<_Read> _readKept(
   }
   return _ReadWhole((
     strategies: strategies,
-    summaries: {for (final summary in kept) summary.publicId: summary},
+    summaries: summaries,
     folders: folders,
     numbers: numbers,
   ));
@@ -460,7 +462,7 @@ final class StoreLibrary {
       _changeHeader(
         stored,
         RenameStrategy(stored.id, name),
-        () => stored.name = name,
+        (strategy) => strategy.name = name,
       );
 
   Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) {
@@ -470,32 +472,37 @@ final class StoreLibrary {
     return _changeHeader(
       stored,
       MoveStrategy(stored.id, folderId),
-      () => stored.folderID = folderId,
+      (strategy) => strategy.folderID = folderId,
     );
   }
 
   Future<LibraryWrite> _changeHeader(
     StrategyData stored,
     LibraryChange change,
-    void Function() apply,
+    void Function(StrategyData strategy) apply,
   ) async {
     if (_heldRefusal(strategies, stored.id, stored) case final refusal?) {
       return _failed(refusal);
     }
-    apply();
-    final asWritten = wholeCopyOf(stored);
-    final summary = summaries.get(stored.id)?.filed(
-          name: stored.name,
-          folderPublicId: stored.folderID,
-        );
     void showing(StrategyData strategy) {
-      strategies._put(stored.id, strategy);
-      if (summary != null) summaries._put(stored.id, summary);
+      apply(strategy);
+      strategies._put(strategy.id, strategy);
+      if (summaries.get(strategy.id) case final summary?) {
+        summaries._put(
+          strategy.id,
+          summary.filed(
+            name: strategy.name,
+            folderPublicId: strategy.folderID,
+          ),
+        );
+      }
     }
 
     return _write(
       show: () => showing(stored),
-      replay: () => showing(asWritten),
+      replay: () {
+        if (strategies.get(stored.id) case final restored?) showing(restored);
+      },
       commit: () async => _commitOf(await _store.editLibrary([change])),
     );
   }
