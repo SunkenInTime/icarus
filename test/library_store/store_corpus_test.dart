@@ -52,13 +52,13 @@ Future<void> _startAsTheAppDoes(Directory scratch) async {
   await moveOrphansToTopLevel();
 }
 
-List<Directory> _storesIn(String corpus) {
+List<Directory> storesIn(String corpus) {
   final stores = hiveStoresUnder(Directory(corpus));
   expect(stores, isNotEmpty, reason: '$corpusVariable names $corpus');
   return stores;
 }
 
-Future<(List<StrategyData>, List<Folder>)> _corpusLibrary(
+Future<(List<StrategyData>, List<Folder>)> corpusLibrary(
   List<Directory> stores,
   Directory scratchRoot, {
   String round = '',
@@ -165,8 +165,8 @@ void main() {
         : false,
     timeout: const Timeout(Duration(hours: 1)),
     () async {
-      final (strategies, folders) = await _corpusLibrary(
-        _storesIn(corpus!),
+      final (strategies, folders) = await corpusLibrary(
+        storesIn(corpus!),
         scratchRoot,
       );
       await _writeHiveLibrary(
@@ -186,8 +186,8 @@ void main() {
         : false,
     timeout: const Timeout(Duration(hours: 1)),
     () async {
-      final (strategies, folders) = await _corpusLibrary(
-        _storesIn(corpus!),
+      final (strategies, folders) = await corpusLibrary(
+        storesIn(corpus!),
         scratchRoot,
       );
       final store = await openStoreOn(MemoryEngine(MemoryStorage()));
@@ -268,8 +268,8 @@ void main() {
         : false,
     timeout: const Timeout(Duration(hours: 1)),
     () async {
-      final (strategies, folders) = await _corpusLibrary(
-        _storesIn(corpus!),
+      final (strategies, folders) = await corpusLibrary(
+        storesIn(corpus!),
         scratchRoot,
       );
       final scratch = await scratchRoot.createTemp('summary-rebuild-');

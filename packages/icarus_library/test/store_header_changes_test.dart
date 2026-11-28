@@ -169,6 +169,33 @@ void main() {
     await reopened.close();
   });
 
+  test('a rename and a move keep the time the strategy was last edited, as '
+      'they do on Hive', () async {
+    final (store, _, storage) = await _countedOn(await seededClean());
+    savedValue(
+      await store.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'folder', name: 'Folder')),
+      ]),
+    );
+    final edited = _listed(store, strategyId).updatedAt;
+
+    savedValue(
+      await store.editLibrary([const RenameStrategy(strategyId, 'Renamed')]),
+    );
+    savedValue(
+      await store.editLibrary([const MoveStrategy(strategyId, 'folder')]),
+    );
+    await store.close();
+
+    final reopened = await openOn(storage.contents);
+    expect(_listed(reopened, strategyId).updatedAt, edited);
+    expect(
+      headerOf(strategyOf(await reopened.readStrategy(strategyId))).updatedAt,
+      edited,
+    );
+    await reopened.close();
+  });
+
   test('a strategy listed in another folder than its own row says is listed '
       'where the row says after one edit moves it away and back', () async {
     final storage = MemoryStorage();

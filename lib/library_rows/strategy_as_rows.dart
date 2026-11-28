@@ -618,7 +618,7 @@ int _bySortIndexThenId(
         ? left.$1.compareTo(right.$1)
         : left.$2.compareTo(right.$2);
 
-MapValue? _mapNamed(String name) {
+MapValue? mapNamed(String name) {
   for (final MapEntry(:key, :value) in Maps.mapNames.entries) {
     if (value == name) return key;
   }
@@ -631,7 +631,7 @@ StrategyFromRows strategyFromRows(
 }) {
   final strategyRow = rows.strategy;
   final problems = <DataProblem>[];
-  final map = _mapNamed(strategyRow.mapData);
+  final map = mapNamed(strategyRow.mapData);
   if (map == null) problems.add(UnknownMap(strategyRow.mapData));
   MapThemePalette? palette;
   if (strategyRow.themeOverridePalette case final stored?) {

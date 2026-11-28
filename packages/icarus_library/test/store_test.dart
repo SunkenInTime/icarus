@@ -1366,9 +1366,13 @@ void main() {
       },
     );
 
-    test('folders and moves are rows in the same store', () async {
+    test(
+        'folders and moves are rows in the same store, and a move keeps the '
+        'time the strategy was last edited, because moving it into a folder '
+        'is not an edit of it', () async {
       final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
+      final lastEdited = listOf(store).strategies.single.updatedAt;
       final edited = savedValue(
         await store.editLibrary([
           PutFolder(folder('defaults')),
@@ -1378,7 +1382,7 @@ void main() {
       );
       expect(edited.folders.map((f) => f.publicId), ['defaults', 'ascent']);
       expect(edited.summaries.single.folderPublicId, 'ascent');
-      expect(edited.summaries.single.updatedAt, asStored(editedAt));
+      expect(edited.summaries.single.updatedAt, lastEdited);
       await store.close();
       final reopened = await openOn(disk.contents);
       expect(listOf(reopened).folders, hasLength(2));

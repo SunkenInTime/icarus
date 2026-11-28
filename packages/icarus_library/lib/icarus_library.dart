@@ -57,7 +57,13 @@ export 'src/store/memory_engine.dart';
 export 'src/store/migration.dart';
 export 'src/store/results.dart';
 export 'src/store/store.dart'
-    show CanRead, LibraryStore, StoreNotOpened, StoreOpened, StoreOpening;
+    show
+        CanRead,
+        LibraryStore,
+        StoreNotOpened,
+        StoreOpened,
+        StoreOpening,
+        summaryOfRows;
 export 'src/store/summary.dart'
     show
         AllReadable,
