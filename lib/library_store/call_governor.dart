@@ -252,8 +252,10 @@ final class CallGovernor {
     _say(id, snap, null, from);
   }
 
-  void unreadable(String id, Snapshot snap, CannotRead cannot) =>
-      _say(id, snap, cannot, WordFrom.liveResult);
+  void unreadable(String id, Snapshot snap, CannotRead cannot) {
+    if (word(id, snap) case final said? when said.cannot != null) return;
+    _say(id, snap, cannot, WordFrom.liveResult);
+  }
 
   void readAnswered(String id, Snapshot snap) {
     if (word(id, snap)?.cannot != null) _words.remove(id);

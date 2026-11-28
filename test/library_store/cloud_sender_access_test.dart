@@ -90,6 +90,17 @@ void liveListNow(World world, String change) {
   world.sender.liveArrived(strategyId, theList, servedAccount, listNow(world));
 }
 
+List<BaseArrived> listResultsAt(World world, ResultPoint point) => [
+      for (final event in world.written())
+        if (event case BaseArrived(point: final at) when at == point) event,
+    ];
+
+StoreReadOutcome liveRefusal(World world) => StoreReadRefused(
+      StoreReadRefusal.forbidden,
+      'forbidden',
+      point: world.server.stamp(),
+    );
+
 void main() {
   group('a result at the point of one the store already took is settled', () {
     test('a live list at the point of the list the store took owes no read',
@@ -154,6 +165,35 @@ void main() {
         hasLength(2),
       );
       expect(world.sender.liveOwed, 1);
+    });
+  });
+
+  test(
+      'a newer live list arriving while the kept mark fails to write is kept '
+      'and taken, not lost to a read owed for the older one', () {
+    inWorld((world) {
+      world.sender.liveOpened(strategyId, theList);
+      world.settle();
+      ownerChangesTheStrategy(world, 'Ended');
+      final stale = listNow(world);
+      world.server.connection = 2;
+      late StoreReadAnswered newer;
+      world.slowStore
+        ..refusesStampWrites = 1
+        ..whileStampRefused = () {
+          world.connection = 2;
+          ownerChangesTheStrategy(world, 'Newer');
+          newer = listNow(world);
+          world.sender.liveArrived(strategyId, theList, servedAccount, newer);
+        };
+      world.sender.liveArrived(strategyId, theList, servedAccount, stale);
+      world.settle(const Duration(minutes: 1));
+      expect(world.slowStore.refusesStampWrites, 0);
+      expect(
+        listResultsAt(world, newer.point),
+        hasLength(1),
+      );
+      expect(world.sender.liveOwed, 0);
     });
   });
 
@@ -351,6 +391,55 @@ void main() {
         expect(checksMade(world), 0);
         expect(world.sender.readWord(strategyId), isNull);
         expect(world.queueLength(), 0);
+      });
+    });
+  });
+
+  group('a live answer that repeats the last word changes nothing', () {
+    test(
+        'the sender\'s check answers cannot-read, then five live refusals: '
+        'no further read before its ten minutes', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        world.server.overrideRead =
+            (call) => call.page == null ? forbiddenRead : null;
+        refusedAsViewer(world);
+        world.settle(const Duration(minutes: 1));
+        expect(listReads(world, from), hasLength(1));
+        world.sender.liveOpened(strategyId, theList);
+        for (var n = 0; n < 5; n++) {
+          world.sender.liveArrived(
+              strategyId, theList, servedAccount, liveRefusal(world));
+          world.settle(const Duration(minutes: 1));
+        }
+        expect(listReads(world, from), hasLength(1));
+        world.settle(const Duration(minutes: 5));
+        expect(listReads(world, from), hasLength(2));
+      });
+    });
+
+    test(
+        'the sender\'s check answers viewer, then a live refusal: one check, '
+        'then quiet through more refusals', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        refusedAsViewer(world);
+        world.settle(const Duration(minutes: 1));
+        expect(listReads(world, from), hasLength(1));
+        world.server.overrideRead =
+            (call) => call.page == null ? forbiddenRead : null;
+        world.sender
+          ..liveOpened(strategyId, theList)
+          ..liveArrived(strategyId, theList, servedAccount, liveRefusal(world));
+        world.settle(const Duration(minutes: 1));
+        expect(listReads(world, from), hasLength(2));
+        for (var n = 0; n < 4; n++) {
+          world.sender.liveArrived(
+              strategyId, theList, servedAccount, liveRefusal(world));
+          world.settle(const Duration(minutes: 1));
+        }
+        expect(listReads(world, from), hasLength(2));
+        expect(checksMade(world), 2);
       });
     });
   });
