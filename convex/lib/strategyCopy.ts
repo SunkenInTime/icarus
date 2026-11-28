@@ -112,7 +112,7 @@ export async function copyStrategy(
     pageIsAttack: [...sourcePages]
       .sort((a, b) => a.sortIndex - b.sortIndex)
       .map((page) => page.isAttack),
-    lineupCount: copy.lineupAgents.length,
+    lineupCount: copy.lineupCount,
   };
 }
 

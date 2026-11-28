@@ -1506,6 +1506,10 @@ const ledger: Record<string, LedgerEntry> = {
     exempt:
       "writes only assetReferences and completedBackfills rows, which no full read reads, and schedules other passes that have their own entries",
   },
+  "maintenance.js:backfillCommunityLineupCounts": {
+    exempt:
+      "writes only posts' lineup counts and a completedBackfills row, which no full read carries",
+  },
   "maintenance.js:backfillStrategyAgentSummaries": {
     exempt: "writes only strategyAgentSummaries rows, which no full read reads",
   },
