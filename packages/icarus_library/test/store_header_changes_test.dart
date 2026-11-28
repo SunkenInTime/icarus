@@ -193,6 +193,9 @@ void main() {
       headerOf(strategyOf(await reopened.readStrategy(strategyId))).updatedAt,
       edited,
     );
+    await reopened.close();
+  });
+
   test('a strategy listed in another folder than its own row says is listed '
       'where the row says after one edit moves it away and back', () async {
     final storage = MemoryStorage();
