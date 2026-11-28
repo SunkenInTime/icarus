@@ -3092,9 +3092,26 @@ void main() {
             }
           };
           final before = server.readCalls.length;
+          final from = world.written().length;
           world.commitPageDelete('delete-p2', secondId());
-          world.settle(const Duration(minutes: 1));
+          for (var second = 0; second < 60; second++) {
+            world.settle(const Duration(seconds: 1));
+            expect(
+              world.sender.couldNotResolve(strategyId),
+              isNull,
+              reason: 'after $second s',
+            );
+          }
           expect(readsAfter(world, before), ['list', 'page p2', 'page p2']);
+          expect(
+            [
+              for (final event in world.written().skip(from))
+                if (event case BaseArrived(:final base)
+                    when base is! HeaderRead)
+                  base.runtimeType,
+            ],
+            [PageRead, PageGone],
+          );
           expect(world.readsRecorded(), [
             'the page list',
             'page p2',

@@ -2376,16 +2376,22 @@ void main() {
       );
       client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
       expect(client.view('whole').sendable, isFalse);
+      expect(
+        client.view('whole').holds,
+        contains(
+          awaitingResult(const RowResult(ElementTarget('e1'), 'page-a')),
+        ),
+      );
       client.arrive(const PageGone('page-a'));
       expect(client.view('whole').sendable, isTrue);
       server.rows = withoutPage(server.rows, 'page-a');
       sendAndAnswer(client, server, ['whole']);
       expect(
         stateOf(client, 'whole'),
-        isA<NeedsUser>().having(
-          (state) => state.reason,
-          'reason',
-          isA<RefusedByServer>(),
+        const NeedsUser(
+          RefusedByServer(
+            RejectedByServer(RejectionReason.notFound, NoServerCopy()),
+          ),
         ),
       );
     });
@@ -2412,6 +2418,13 @@ void main() {
         server.rows = withOp(
           server.rows,
           pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
+        );
+        expect(client.view('rename').sendable, isFalse);
+        expect(
+          client.view('rename').holds,
+          contains(
+            awaitingResult(const RowResult(PageTarget('page-c'), 'page-c')),
+          ),
         );
         client.arrive(headerReadOf(server.rows));
         expect(client.view('rename').sendable, isTrue);
@@ -2562,8 +2575,15 @@ void main() {
         ),
       );
       client.arrive(const PageGone('page-a'));
+      expect(client.queue.shown.goneThisSession, contains('page-a'));
+      expect(client.queue.shown.pages, isNot(contains('page-a')));
       client.arrive(headerReadOf(server.rows));
+      expect(client.queue.shown.pages, contains('page-a'));
+      expect(client.queue.shown.goneThisSession, isNot(contains('page-a')));
       expect(stateOf(client, 'rename'), isNot(isA<NeedsUser>()));
+      expect(client.view('rename').holds, isEmpty);
+      client.claim(['rename']);
+      expect(client.lastSent().single, isA<PagePatchOp>());
     });
 
     StrategyRowSet withoutE1(StrategyRowSet rows) => StrategyRowSet(
@@ -3047,10 +3067,10 @@ void main() {
     sendAndAnswer(client, server, ['back']);
     expect(
       stateOf(client, 'back'),
-      isA<NeedsUser>().having(
-        (state) => state.reason,
-        'reason',
-        isA<RefusedByServer>(),
+      const NeedsUser(
+        RefusedByServer(
+          RejectedByServer(RejectionReason.notFound, NoServerCopy()),
+        ),
       ),
     );
   });

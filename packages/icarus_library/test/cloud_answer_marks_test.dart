@@ -376,9 +376,15 @@ void main() {
       expect(client.queue.shown.goneThisSession, contains('page-a'));
       expect(client.queue.shown.pageCurrent('page-a'), isFalse);
       expect(stateIn(client, 'second'), isNot(isA<NeedsUser>()));
+      expect(client.view('second').sendable, isTrue);
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(12)));
       expect(stateIn(client, 'second'), isNot(isA<NeedsUser>()));
       expect(client.view('second').sendable, isTrue);
+      client.claim(['second']);
+      expect(
+        (client.lastSent().single as ElementPatchOp).expectedElementRevision,
+        2,
+      );
     });
   });
 

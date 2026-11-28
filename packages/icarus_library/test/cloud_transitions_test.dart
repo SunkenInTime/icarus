@@ -654,8 +654,10 @@ String renderTable() {
       'already holding what the op writes). Otherwise it waits for the '
       'row\'s result, and needs the user when a result of this session shows '
       'the row otherwise, or when a result of its page no longer holds a row '
-      'that results showed or this device added. Once its page is gone it '
-      'is sent, and the server\'s answer settles it.',
+      'that results showed or this device added. Once a current result shows '
+      'its page gone, it names the revision the user saw instead of waiting '
+      'for its row; its other holds and the resend window still apply, a '
+      'delete goes in its checked form, and the server\'s answer settles it.',
     )
     ..writeln(
       '- A page add, reorder or delete answers only the strategy revision, so '
@@ -707,8 +709,8 @@ String renderTable() {
       'strategy itself is gone nothing retires. A delete this device made '
       'stays known as its own until a result shows a later revision of the '
       'row or its page is gone that way. '
-      'An undo onto a page that is gone is sent, and the server\'s answer '
-      'reaches the user.',
+      'An undo onto a page that is gone names the revision the user saw '
+      'and waits only for its other holds; the server\'s answer settles it.',
     )
     ..writeln()
     ..writeln('## Which copy of a row a result leaves held')

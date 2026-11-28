@@ -1856,9 +1856,14 @@ and `_judge` is the only place an outgoing revision is chosen.
   drew it).
   It needs the user when a result of this session shows the row otherwise,
   or when a result of its page no longer holds a row that results showed or
-  this device added. Once its page is gone it is sent instead, and the
-  server's answer settles it: `PAGE_DELETED` for a page in the trash
-  (`RefusedAsPageDeleted`), not found for a row purged with its page. A solo
+  this device added. Once a current result shows its page gone, it names
+  the revision the user saw instead of waiting for its row; its other holds
+  and the resend window still apply, and a delete goes in its checked form,
+  never last writer wins, so the server compares that revision. The server's
+  answer settles it. For example, `PAGE_DELETED` for a page in the trash
+  (`RefusedAsPageDeleted`), not found or nothing to do for a row purged with
+  its page, refused as changed for an item a teammate moved, or applied if a
+  teammate restored the page before the write arrived. A solo
   session
   waits only after a session opens: such an op made behind landed work, or
   behind work queued in an earlier session, waits for its row's first result

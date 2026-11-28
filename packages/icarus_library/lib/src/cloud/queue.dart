@@ -2604,6 +2604,14 @@ bool _pageGone(Shown shown, String page) =>
         (shown.highest.containsKey(PageTarget(page)) ||
             shown.goneThisSession.contains(page)));
 
+bool _deletesOffAGonePage(Shown shown, StrategyOp op) => switch (op) {
+  ElementDeleteOp(:final pagePublicId) ||
+  LineupGroupDeleteOp(
+    :final pagePublicId,
+  ) => _pageGone(shown, shown.rows[targetOf(op)]?.page ?? pagePublicId),
+  _ => false,
+};
+
 bool _deletes(StrategyOp op) =>
     op is ElementDeleteOp || op is LineupGroupDeleteOp;
 
@@ -2783,7 +2791,9 @@ StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
     sendForm(
       entry.op,
       sendPolicy(
-        madeChecked: entry.madeAs == MadeAs.checked,
+        madeChecked:
+            entry.madeAs == MadeAs.checked ||
+            _deletesOffAGonePage(queue.shown, entry.op),
         attempted: (queue._index.attemptsByOp[entry.id] ?? const []).isNotEmpty,
         connected: queue.session.connected,
         writtenThisSession: entry.authoredIn == queue.session.number,
