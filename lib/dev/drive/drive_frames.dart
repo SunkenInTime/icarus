@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/scheduler.dart';
+import 'package:icarus/startup/launch_clock.dart';
 
 final class RunFrames {
   var _frames = 0;
@@ -11,6 +12,8 @@ final class RunFrames {
   var _worstRaster = Duration.zero;
   var _longestMainBlock = Duration.zero;
   Timer? _ticker;
+  final _blocks = <String>[];
+  final _slowFrames = <String>[];
 
   static const _tick = Duration(milliseconds: 5);
 
@@ -19,7 +22,13 @@ final class RunFrames {
       _frames++;
       final span = timing.totalSpan;
       if (span > _worstFrame) _worstFrame = span;
-      if (span.inMilliseconds > 50) _over50ms++;
+      if (span.inMilliseconds > 50) {
+        _over50ms++;
+        _slowFrames.add('${span.inMilliseconds} ms (build '
+            '${timing.buildDuration.inMilliseconds}, raster '
+            '${timing.rasterDuration.inMilliseconds}) noted at '
+            '${launchClock.elapsedMilliseconds} ms');
+      }
       if (timing.buildDuration > _worstBuild)
         _worstBuild = timing.buildDuration;
       if (timing.rasterDuration > _worstRaster) {
@@ -34,6 +43,10 @@ final class RunFrames {
     _ticker = Timer.periodic(_tick, (_) {
       final late = last.elapsed - _tick;
       if (late > _longestMainBlock) _longestMainBlock = late;
+      if (late.inMilliseconds >= 20) {
+        _blocks.add('${late.inMilliseconds} ms ending at '
+            '${launchClock.elapsedMilliseconds} ms');
+      }
       last = Stopwatch()..start();
     });
   }
@@ -45,6 +58,7 @@ final class RunFrames {
         '${_worstFrame.inMilliseconds} ms (build ${_worstBuild.inMilliseconds} '
         'ms, raster ${_worstRaster.inMilliseconds} ms), frames over 50 ms '
         '$_over50ms, longest main isolate block '
-        '${_longestMainBlock.inMilliseconds} ms';
+        '${_longestMainBlock.inMilliseconds} ms; blocks of 20 ms or more: '
+        '${_blocks.join(', ')}; frames over 50 ms: ${_slowFrames.join(', ')}';
   }
 }
