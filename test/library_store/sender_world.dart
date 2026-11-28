@@ -15,7 +15,14 @@ import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/stamp_source.dart';
 
 import 'server_fixtures.dart'
-    show at, pageList, secondPage, serverRows, servedAccount, strategyId;
+    show
+        at,
+        pageId,
+        pageList,
+        secondPage,
+        serverRows,
+        servedAccount,
+        strategyId;
 
 final start = DateTime.utc(2026, 11, 23, 12, 0, 0, 0, 371);
 
@@ -928,6 +935,21 @@ final class World {
     settle(const Duration(seconds: 2));
     expect(sender.adopting(strategyId), isFalse);
     expect(cloud().queue.session.number, greaterThan(0));
+    show(pageId);
+  }
+
+  void show(String page) {
+    final subject = ReadOfPage(page);
+    sender.liveOpened(strategyId, subject);
+    sender.liveArrived(
+      strategyId,
+      subject,
+      servedAccount,
+      server.answerNow(ReadCall(strategyId, page, servedAccount)),
+    );
+    settle(const Duration(milliseconds: 500));
+    sender.liveClosed(strategyId, subject);
+    settle(const Duration(milliseconds: 500));
   }
 
   void addOtherStrategy({Account? owner, String id = otherStrategy}) {
@@ -1105,6 +1127,7 @@ final class World {
     commitMove(0);
     settle(const Duration(minutes: 10));
     _record([const UserDiscardedReplaced()]);
+    show(pageId);
     server.log.clear();
     if (cloud().queue.entries.isNotEmpty ||
         cloud().queue.strategy.setAside.count != 0) {
