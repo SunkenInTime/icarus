@@ -562,7 +562,7 @@ Pick pick(CloudStrategy cloud, String newClientId) {
           if (retryAt == null || at.isBefore(retryAt)) retryAt = at;
         case AwaitingResult():
           awaiting++;
-        case BehindEntry():
+        case BehindEntry() || PageInTrash() || RefusedAsPageDeleted():
           break;
       }
     }

@@ -1232,6 +1232,9 @@ final class StoreModel {
         ) =>
           UserRetried(entry.id),
         (PendingOp(), EntryView(state: NeedsUser())) => UserDiscarded(entry.id),
+        (PendingOp(), EntryView(:final holds))
+            when draining && holds.any((hold) => hold is PageInTrash) =>
+          UserDiscarded(entry.id),
         _ => null,
       };
       if (action == null) continue;
@@ -1456,7 +1459,9 @@ final class StoreModel {
       if (entry is! PendingOp) continue;
       final state = cloud.views[entry.id]!.state;
       final bad = switch (state) {
-        Waiting() => server.landed(entry.id) || server.refused(entry.id),
+        Waiting() =>
+          server.landed(entry.id) ||
+              (server.refused(entry.id) && !refusedAsPageDeleted(entry)),
         NeedsUser(reason: RefusedByServer()) => server.landed(entry.id),
         _ => false,
       };

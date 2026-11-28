@@ -107,6 +107,20 @@ enum StallExit {
     onScreen: Face.unreadableWork,
     goesAgain: 'an answer, $newEvidence',
   ),
+  pageInTrash(
+    title: 'An edit whose page a teammate deleted waits while the page is in '
+        'the trash',
+    waitsFor: 'a page list showing the page live again, after which the edit '
+        'is judged as usual, or one without it, after which the edit needs '
+        'the user as its page is gone',
+    calls: 'when the edit went out before the page list said the page was '
+        'in the trash: that one send, refused as its page deleted, and the '
+        'page list it owes; then nothing',
+    onScreen: Face.awaitingResult,
+    goesAgain: 'a page list read for anything else, or the editor\'s live '
+        'page list, showing the page live (restored by anyone) or gone (purged '
+        'from the trash); the user discarding the edit',
+  ),
   landedWork(
     title: 'Landed work waits for a read that shows it',
     waitsFor: 'a read of the page or page list that holds it',
@@ -340,6 +354,7 @@ enum StallExit {
       replaced ||
       deletedOnServer ||
       refusedEdit ||
+      pageInTrash ||
       notBeingRead =>
         'never',
     };
@@ -382,6 +397,8 @@ enum StallExit {
         localTrouble => 'none while the app runs',
         editsSettling => '${timing.longestWait.inSeconds} s',
         viewerOnTakeUp || goneOnTakeUp => 'one read',
+        pageInTrash => 'none: it waits until a page list shows the page '
+            'live or without it, or the user discards it',
         signIn ||
         upgrade ||
         offline ||

@@ -245,7 +245,7 @@ void main() {
           attempt,
           const FailedAnswer(
             'move',
-            KnownFailure(FailureCode.pageDeleted),
+            KnownFailure(FailureCode.invalidOp),
             'gone',
           ),
           point: tick(),
@@ -257,7 +257,7 @@ void main() {
           (state) => state.reason,
           'reason',
           const RefusedByServer(
-            FailedOnServer(KnownFailure(FailureCode.pageDeleted), 'gone'),
+            FailedOnServer(KnownFailure(FailureCode.invalidOp), 'gone'),
           ),
         ),
       );
@@ -2402,6 +2402,8 @@ void main() {
         pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
       );
       client.arrive(headerReadOf(server.rows));
+      expect(client.view('rename').holds, [const PageInTrash('page-c')]);
+      client.arrive(headerReadOf(withoutPage(server.rows, 'page-c')));
       expect(stateOf(client, 'rename'), const NeedsUser(RowPageGone()));
     });
 

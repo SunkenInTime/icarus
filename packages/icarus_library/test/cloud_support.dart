@@ -424,11 +424,56 @@ StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
       final other => fail('expected $op to apply, got $other'),
     };
 
-HeaderRead headerReadOf(StrategyRowSet rows) => HeaderRead(
-  strategy: rows.strategy,
-  pages: rows.pages.toList(),
-  settings: rows.settings.toList(),
-);
+final listedDeletedAt = DateTime.utc(2026, 11, 20);
+
+const trashRetention = Duration(days: 30);
+
+Map<String, Object?> trashedAsListed(TrashedPage page, {DateTime? deletedAt}) {
+  final at = switch (page) {
+    ConfirmedTrashedPage(deletedAt: final confirmed) => confirmed,
+    PendingTrashedPage() => deletedAt ?? listedDeletedAt,
+  };
+  return {
+    'createdAt': createdAtOf(page) ?? fixtureLife,
+    'deletedAt': at.millisecondsSinceEpoch,
+    'deletedBy': switch (page) {
+      ConfirmedTrashedPage(:final deletedBy) => deletedBy.toJson(),
+      PendingTrashedPage() => 'you',
+    },
+    'isAttack': page.isAttack,
+    'isAutoNamed': ?page.isAutoNamed,
+    'name': page.name,
+    'publicId': page.publicId,
+    'restorableUntil': at.add(trashRetention).millisecondsSinceEpoch,
+    'revision': page.revision,
+    'sortIndex': page.sortIndex,
+    'strategyPublicId': page.strategyPublicId,
+  };
+}
+
+ConfirmedTrashedPage listedTrashed(Map<String, Object?> entry) =>
+    switch (PageRow.decode({...entry, 'deleted': true})) {
+      Read(value: final ConfirmedTrashedPage page) => page,
+      final other => fail('not a listed trashed page: $other'),
+    };
+
+HeaderRead headerReadOf(StrategyRowSet rows, {DateTime? deletedAt}) =>
+    HeaderRead(
+      strategy: rows.strategy,
+      pages: [
+        for (final page in rows.pages)
+          switch (page) {
+            final TrashedPage trashed => listedTrashed(
+              trashedAsListed(trashed, deletedAt: deletedAt),
+            ),
+            _ => page,
+          },
+      ],
+      settings: [
+        for (final row in rows.settings)
+          if (rows.page(row.pagePublicId) is! TrashedPage) row,
+      ],
+    );
 
 ArrivedBase pageReadOf(StrategyRows rows, String page) =>
     switch (rows.page(page)) {

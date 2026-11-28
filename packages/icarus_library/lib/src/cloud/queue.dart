@@ -575,6 +575,35 @@ final class UntilRetryTime extends Hold {
   String toString() => 'until ${at.toIso8601String()}';
 }
 
+final class PageInTrash extends Hold {
+  const PageInTrash(this.page);
+
+  final String page;
+
+  @override
+  bool operator ==(Object other) => other is PageInTrash && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(PageInTrash, page);
+
+  @override
+  String toString() => 'its page $page is in the trash';
+}
+
+final class RefusedAsPageDeleted extends Hold {
+  const RefusedAsPageDeleted();
+
+  @override
+  bool operator ==(Object other) => other is RefusedAsPageDeleted;
+
+  @override
+  int get hashCode => (RefusedAsPageDeleted).hashCode;
+
+  @override
+  String toString() =>
+      'refused as its page deleted, until a page list says where it is';
+}
+
 final class AwaitingResult extends Hold {
   const AwaitingResult(this.subject);
 
@@ -871,6 +900,55 @@ final class Delivered extends RemovalCause {
 }
 
 enum Delivery { applied, alreadyThere, nothingToDo, alreadyAsWritten }
+
+final class SentAgainAs extends RemovalCause {
+  const SentAgainAs(this.opId);
+
+  final String opId;
+
+  @override
+  bool operator ==(Object other) => other is SentAgainAs && other.opId == opId;
+
+  @override
+  int get hashCode => Object.hash(SentAgainAs, opId);
+
+  @override
+  String toString() => 'SentAgainAs($opId)';
+}
+
+const _sentAgain = '~again';
+
+String sentAgainId(String opId) => '$opId$_sentAgain';
+
+bool isSentAgain(String opId) => opId.endsWith(_sentAgain);
+
+bool refusedAsPageDeleted(PendingOp entry) =>
+    _refusedInTheTrash(entry.op) &&
+    switch (entry.refusal) {
+      RefusedWith(
+        refusal: FailedOnServer(
+          code: KnownFailure(code: FailureCode.pageDeleted),
+        ),
+      ) =>
+        true,
+      _ => false,
+    };
+
+final class LetGoWithItsPage extends RemovalCause {
+  const LetGoWithItsPage(this.deleteOpId);
+
+  final String deleteOpId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LetGoWithItsPage && other.deleteOpId == deleteOpId;
+
+  @override
+  int get hashCode => Object.hash(LetGoWithItsPage, deleteOpId);
+
+  @override
+  String toString() => 'LetGoWithItsPage($deleteOpId)';
+}
 
 final class FoldedInto extends RemovalCause {
   const FoldedInto(this.opId);
@@ -1940,6 +2018,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     ]);
     edit.change.lives.add(page.publicId);
   }
+  if (base is HeaderRead) _sendAgainWhereThePageIsLive(edit);
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -2682,7 +2761,10 @@ bool _foldableHold(Hold hold, Map<String, EntryView> views) => switch (hold) {
     _ => false,
   },
   UntilRetryTime() => true,
-  BehindEntry() || AwaitingResult() => false,
+  BehindEntry() ||
+  AwaitingResult() ||
+  PageInTrash() ||
+  RefusedAsPageDeleted() => false,
 };
 
 Step _claim(
@@ -2849,16 +2931,21 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
     serverTime: point.serverTime,
   );
   _resultsStale(edit, entry, sent.op, point, answer);
-  void landed(int revision, {required int? life, required bool ours}) =>
-      _landed(
-        edit,
-        entry,
-        sent,
-        revision,
-        life: life,
-        ours: ours,
-        answeredAt: answeredAt,
-      );
+  void landed(int revision, {required int? life, required bool ours}) {
+    _landed(
+      edit,
+      entry,
+      sent,
+      revision,
+      life: life,
+      ours: ours,
+      answeredAt: answeredAt,
+    );
+    if (entry.op case PageDeleteOp(:final pagePublicId)) {
+      _letGoWithItsPage(edit, entry, pagePublicId);
+    }
+  }
+
   switch (answer) {
     case AppliedAnswer(:final revision, :final life):
       landed(revision, life: life, ours: true);
@@ -2909,11 +2996,45 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
         );
       }
     case FailedAnswer(:final code, :final message):
-      edit.put(
-        entry.copyWith(refusal: RefusedWith(FailedOnServer(code, message))),
+      final refused = entry.copyWith(
+        refusal: RefusedWith(FailedOnServer(code, message)),
       );
+      edit.put(refused);
+      if (refusedAsPageDeleted(refused)) {
+        edit.shown = edit.shown.owingList(
+          AfterRefusal(
+            session: edit.session.number,
+            point: point,
+            visibleAt: true,
+          ),
+        );
+      }
   }
   return edit.done();
+}
+
+void _letGoWithItsPage(_Edit edit, PendingOp delete, String page) {
+  final views = entryViews(edit.original, edit.now);
+  for (final ahead in [...edit.entries]) {
+    if (ahead is! PendingOp ||
+        ahead.place > delete.place ||
+        ahead.id == delete.id ||
+        views[ahead.id]?.state is Sending ||
+        !_refusedInTheTrash(ahead.op) ||
+        !_contentPagesOf(edit.original, ahead).contains(page)) {
+      continue;
+    }
+    final entity = entityOf(ahead.op);
+    for (final gone in [...edit.entries]) {
+      if (gone is PendingOp &&
+          gone.id != delete.id &&
+          (gone.id == ahead.id ||
+              (gone.place > ahead.place && entityOf(gone.op) == entity)) &&
+          edit.indexOf(gone.id) != -1) {
+        edit.remove(gone.id, LetGoWithItsPage(delete.id));
+      }
+    }
+  }
 }
 
 bool _alreadyAsWritten(StrategyOp op, ServerSnapshot snapshot) {
@@ -3103,8 +3224,9 @@ Step _keepMine(
   if (edit.indexOf(replacement.opId) != -1) {
     return NotApplicable(queue, OpIdTaken(replacement.opId));
   }
-  edit.replaceAt(
-    edit.indexOf(opId),
+  _issueAgain(
+    edit,
+    entry,
     PendingOp(
       place: entry.place,
       work: switch (entry.work) {
@@ -3133,14 +3255,46 @@ Step _keepMine(
       retriedAfter: edit.lastAttempt,
       strategyLife: entry.strategyLife,
     ),
-  );
-  edit.effects.add(
-    OpRemoved(
-      opId,
-      RemovedByUser(UserRemoval.replacedByKeepMine, landingOf(queue, entry)),
-    ),
+    RemovedByUser(UserRemoval.replacedByKeepMine, landingOf(queue, entry)),
   );
   return edit.done();
+}
+
+void _issueAgain(
+  _Edit edit,
+  PendingOp entry,
+  PendingOp replacement,
+  RemovalCause cause,
+) {
+  edit.replaceAt(edit.indexOf(entry.id), replacement);
+  edit.effects.add(OpRemoved(entry.id, cause));
+}
+
+void _sendAgainWhereThePageIsLive(_Edit edit) {
+  if (isDebt(edit.shown.list)) return;
+  for (final entry in [...edit.entries]) {
+    if (entry is! PendingOp ||
+        !refusedAsPageDeleted(entry) ||
+        isSentAgain(entry.id)) {
+      continue;
+    }
+    final pages = _contentPagesOf(edit.original, entry);
+    if (!pages.every(edit.shown.pages.containsKey)) continue;
+    final again = renamed(entry.op, sentAgainId(entry.id));
+    _issueAgain(
+      edit,
+      entry,
+      entry.copyWith(
+        work: switch ((entry.work, again)) {
+          (CheckedDelete(:final seen), final PageDeleteOp delete) =>
+            CheckedDelete(delete, seen),
+          _ => OpWork(again),
+        },
+        refusal: const NotRefused(),
+      ),
+      SentAgainAs(again.opId),
+    );
+  }
 }
 
 Step _userRemoves(_Edit edit, String opId, UserRemoval action, DateTime now) {
@@ -3154,6 +3308,11 @@ Step _userRemoves(_Edit edit, String opId, UserRemoval action, DateTime now) {
       (EntryView(state: Sending()), _) => false,
       (final view, UserRemoval.usedCloud) => _userMayReplace(view),
       (EntryView(state: NeedsUser()), _) => true,
+      (EntryView(:final holds), UserRemoval.discarded)
+          when holds.any(
+            (hold) => hold is PageInTrash || hold is RefusedAsPageDeleted,
+          ) =>
+        true,
       (_, _) =>
         standing == Standing.deletedOnServer ||
             standing == Standing.editAccessLost,

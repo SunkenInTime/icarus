@@ -360,9 +360,20 @@ final class Model {
     recordHistory();
     final before = revisionsOf(server.rows);
     final beforeRow = rowOf(server.rows, checkTargetOf(op));
+    final replaying = server.recorded['$owner|${op.opId}'];
     final answer = server.apply(owner, op, expectedLife: livesSent[op.opId]);
+    if (replaying case RecordedAnswer(
+      answer: FailedAnswer(code: KnownFailure(code: FailureCode.pageDeleted)),
+    )) {
+      count('refusals as page deleted replayed after a lost answer');
+    }
     if (answer case RejectedAnswer(reason: RejectionReason.rowReplaced)) {
       count('ops refused as naming a row life that was replaced');
+    }
+    if (answer case FailedAnswer(
+      code: KnownFailure(code: FailureCode.pageDeleted),
+    )) {
+      count('own changes refused as their page deleted');
     }
     if (answer case AppliedAnswer()) {
       final target = checkTargetOf(op);
@@ -660,6 +671,13 @@ final class Model {
         Delivered() => event is OpAnswered,
         FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
+        LetGoWithItsPage(:final deleteOpId) =>
+          event is OpAnswered && event.answer.opId == deleteOpId,
+        SentAgainAs() =>
+          event is BaseArrived &&
+              event.base is HeaderRead &&
+              entry is PendingOp &&
+              refusedAsPageDeleted(entry),
         RemovedByUser() =>
           event is UserAction &&
               (event.opId == entry.id ||
@@ -671,6 +689,8 @@ final class Model {
                   }),
       };
       if (!fits) throw StateError('${entry.id} removed for $cause by $event');
+      if (cause is LetGoWithItsPage) count('ops let go with their page');
+      if (cause is SentAgainAs) count('ops sent again after the trash');
       if (cause is RemovedByUser) userRemoved = true;
       if (cause is RemovedByUser &&
           event is UserAction &&
@@ -680,8 +700,36 @@ final class Model {
     }
   }
 
+  final heldForTrash = <String>{};
+  final wentToUser = <String>{};
+
+  void countHolds(Map<String, EntryView> views) {
+    for (final MapEntry(key: id, value: view) in views.entries) {
+      final inTrash = view.holds.any((hold) => hold is PageInTrash);
+      if (inTrash && heldForTrash.add(id)) count('ops held for the trash');
+      if (!inTrash && heldForTrash.remove(id)) {
+        count(
+          view.state == const NeedsUser(RowPageGone())
+              ? 'held ops whose page was purged'
+              : 'held ops lifted',
+        );
+      }
+      if (view.state case NeedsUser(
+        reason: RefusedByServer(
+          refusal: FailedOnServer(
+            code: KnownFailure(code: FailureCode.pageDeleted),
+          ),
+        ),
+      ) when wentToUser.add(id)) {
+        count('refused as deleted again, to the user');
+      }
+    }
+    heldForTrash.removeWhere((id) => !views.containsKey(id));
+  }
+
   void checkStates() {
     final views = entryViews(client.queue, clock);
+    countHolds(views);
     final queue = client.queue;
     final rebuilt = CloudQueue(
       entries: queue.entries,
@@ -708,7 +756,9 @@ final class Model {
       if (entry is! PendingOp) continue;
       final state = views[entry.id]!.state;
       final bad = switch (state) {
-        Waiting() => server.landed(entry.id) || server.refused(entry.id),
+        Waiting() =>
+          server.landed(entry.id) ||
+              (server.refused(entry.id) && !refusedAsPageDeleted(entry)),
         NeedsUser(
           reason: RefusedByServer(
             refusal: RejectedByServer() || FailedOnServer(),
@@ -1889,7 +1939,14 @@ final class Model {
         ),
         4 when livePages.length > 2 => pageDelete(
           fresh('t'),
-          pick(livePages),
+          pick(switch ([
+            for (final entry in client.queue.entries.whereType<PendingOp>())
+              for (final page in pagesOf(entry))
+                if (livePages.contains(page)) page,
+          ]) {
+            final edited when edited.isNotEmpty => edited,
+            _ => livePages,
+          }),
           expected: server.rows.strategy.revision,
         ),
         _ => movePatch(
@@ -2005,6 +2062,9 @@ final class Model {
           UserRetried(entry.id),
         (PendingOp(), EntryView(state: NeedsUser())) =>
           random.nextBool() ? UserUsedCloud(entry.id) : UserDiscarded(entry.id),
+        (PendingOp(), EntryView(:final holds))
+            when draining && holds.any((hold) => hold is PageInTrash) =>
+          UserDiscarded(entry.id),
         (RetiredOp(), _) => UserDiscarded(entry.id),
         _
             when standingOf(client.queue) == Standing.deletedOnServer &&
@@ -2301,6 +2361,10 @@ const minimums = {
   'read refusals not taken: not newer than the content taken': 100,
   'read refusals not taken: older than the last refusal taken': 1,
   'read refusals not taken: from an ended connection': 12,
+  'ops held for the trash': 50,
+  'own changes refused as their page deleted': 6,
+  'refusals as page deleted replayed after a lost answer': 1,
+  'ops let go with their page': 4,
 };
 
 void main() {

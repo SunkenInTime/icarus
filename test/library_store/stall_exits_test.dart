@@ -449,6 +449,46 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) => record(world, const [UserDiscarded('move-1')]),
     wentAgain: (world, after) => world.queueLength() == 0,
   ),
+  StallExit.pageInTrash: Stall(
+    prepare: (world) {
+      world.pagesOnServer(['p2']);
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(minutes: 1));
+    },
+    start: (world) {
+      world.connection = null;
+      world.commitMove(1);
+      final rows = world.server.rows[strategyId]!;
+      world.server.teammate(
+        strategyId,
+        PageDeleteOp(
+          opId: 'teammate-deletes-p1',
+          pagePublicId: 'p1',
+          expectedStrategyRevision: rows.strategy.revision,
+        ),
+      );
+      world.connection = 1;
+    },
+    goAgain: (world) {
+      final rows = world.server.rows[strategyId]!;
+      final trashed = rows.page('p1')! as TrashedPage;
+      world.server.rows[strategyId] = rows.withRows([
+        LivePage(
+          publicId: trashed.publicId,
+          strategyPublicId: trashed.strategyPublicId,
+          name: trashed.name,
+          sortIndex: trashed.sortIndex,
+          isAttack: trashed.isAttack,
+          isAutoNamed: trashed.isAutoNamed,
+          revision: trashed.revision,
+          unknownFields: trashed.unknownFields,
+        ),
+        rows.strategy.rewritten(revision: rows.strategy.revision + 1),
+      ]);
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+    },
+    wentAgain: (world, after) => sent(after),
+  ),
   StallExit.landedWork: Stall(
     look: const Duration(seconds: 10),
     start: (world) => world.commitMove(1),
@@ -795,6 +835,7 @@ const logs = <StallExit, List<String>>{
     '30 s page p1',
   ],
   StallExit.notBeingRead: [],
+  StallExit.pageInTrash: ['0 s send move-1', '0 s list'],
 };
 
 final measured = <StallExit, ({int firstHour, int laterHour})>{};
@@ -880,6 +921,48 @@ void main() {
       );
     });
   }
+
+  test(
+      'an edit refused as its page deleted costs one send and one page list, '
+      'and nothing more across a reconnect and a restart', () {
+    final storage = MemoryStorage();
+    final server = FakeServer();
+    final calls = <String>[];
+    void watch(World world) {
+      world.server.onRead = (call) => calls.add('$call');
+      world.server.onCall = (call) => calls.add('send ${call.opIds.join(',')}');
+    }
+
+    inWorld(
+      (world) {
+        final stall = stalls[StallExit.pageInTrash]!;
+        stall.prepare!(world);
+        watch(world);
+        stall.start(world);
+        world.settle(const Duration(minutes: 10));
+        expect(calls, ['send move-1', 'list']);
+        expect(world.sender.waitingOn(strategyId), StallExit.pageInTrash);
+        world.connection = null;
+        world.settle(const Duration(minutes: 1));
+        world.connection = 2;
+        world.settle(const Duration(hours: 1));
+        expect(calls, ['send move-1', 'list']);
+      },
+      storage: storage,
+      server: server,
+    );
+    inWorld(
+      (world) {
+        watch(world);
+        world.settle(const Duration(hours: 1));
+        expect(calls, ['send move-1', 'list']);
+        expect(world.sender.waitingOn(strategyId), StallExit.pageInTrash);
+      },
+      storage: storage,
+      server: server,
+      addStrategy: false,
+    );
+  });
 
   group('what ends a stalled wait before its time', () {
     List<Duration> listReads(World world) => [

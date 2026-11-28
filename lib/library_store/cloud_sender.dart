@@ -1325,6 +1325,14 @@ final class CloudSender implements LiveResults {
                 when attention.containsKey(Attention.retriesExhausted) =>
               StallExit.lostSend,
             Tally(needingYou: > 0) => StallExit.refusedEdit,
+            Tally(:final waiting)
+                when waiting.isNotEmpty &&
+                    waiting.keys.every(
+                      (kind) =>
+                          kind == Underway.pageInTrash ||
+                          kind == Underway.refusedAsPageDeleted,
+                    ) =>
+              StallExit.pageInTrash,
             Tally(stillGoing: > 0) => StallExit.lostSend,
             _ when cloud.queue.landed.isNotEmpty => StallExit.landedWork,
             _ => StallExit.notBeingRead,

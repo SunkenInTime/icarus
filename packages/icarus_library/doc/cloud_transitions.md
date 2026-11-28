@@ -444,9 +444,9 @@ Starts as: needs user: RejectedByServer(revision_mismatch).
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
-## needs user: failed on the server with PAGE_DELETED
+## needs user: failed on the server with INVALID_OP
 
-Starts as: needs user: FailedOnServer(PAGE_DELETED).
+Starts as: needs user: FailedOnServer(INVALID_OP).
 
 | Event | Result |
 | --- | --- |
@@ -471,6 +471,58 @@ Starts as: needs user: FailedOnServer(PAGE_DELETED).
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+
+## waiting: refused as its page deleted, until a page list says where the page is
+
+Starts as: waiting, awaiting a result for the page list, refused as its page deleted, until a page list says where it is; page list owed.
+
+| Event | Result |
+| --- | --- |
+| user edits another item | z: waiting, awaiting a result for the page list |
+| user edits the same item | w: waiting, awaiting a result for the page list, behind x (sameRow) |
+| app restarted, same build | page-a not read this session; page-b not read this session; opens session 2 |
+| app restarted, new build | page-a not read this session; page-b not read this session; opens session 2 |
+| connection lost | unchanged |
+| connection returned | page-a not read this session; page-b not read this session; opens session 2 |
+| server time held | unchanged |
+| account changed | page-a not read this session; page-b not read this session; opens session 2 |
+| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
+| result: header as it is | x: gone; x~again: waiting; page list read this session; removes x (SentAgainAs(x~again)) |
+| result: page-a with the item at revision 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-b gone | page-b not read this session |
+| result: strategy gone | x: waiting, refused as its page deleted, until a page list says where it is; standing deletedOnServer; page list read this session |
+| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
+| result: page-a of another life | page list owed; defers page-a for the page list |
+| result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
+
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+
+## waiting: held while its page is in the trash
+
+Starts as: waiting, its page page-a is in the trash.
+
+| Event | Result |
+| --- | --- |
+| user edits another item | z: waiting, its page page-a is in the trash |
+| user edits the same item | w: waiting, its page page-a is in the trash |
+| app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
+| app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
+| connection lost | unchanged |
+| connection returned | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
+| server time held | unchanged |
+| account changed | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
+| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
+| result: header as it is | unchanged |
+| result: page-a with the item at revision 2 | x: waiting, awaiting a result for the page list, its page page-a is in the trash; page list owed; defers page-a for the page list |
+| result: page-a with the item as this device wrote it at 2 | x: waiting, awaiting a result for the page list, its page page-a is in the trash; page list owed; defers page-a for the page list |
+| result: page-b gone | page-b not read this session |
+| result: strategy gone | standing deletedOnServer |
+| result: page list the store would not keep | x: waiting, awaiting a result for the page list, its page page-a is in the trash; page list refused: ResultWithoutLife(page-a) |
+| result: page-a of another life | x: waiting, awaiting a result for the page list, its page page-a is in the trash; page list owed; defers page-a for the page list |
+| result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
+
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: unanswered for 29 days
 
@@ -691,7 +743,7 @@ Starts as: needs user: its page is gone.
 
 | Event | Result |
 | --- | --- |
-| user edits another item | z: waiting |
+| user edits another item | z: needs user: its page is gone |
 | user edits the same item | w: waiting, behind x (sameRow) |
 | app restarted, same build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
@@ -699,7 +751,7 @@ Starts as: needs user: its page is gone.
 | connection returned | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
 | server time held | unchanged |
 | account changed | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
-| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
+| user: keep mine, same item | x: gone; x2: needs user: its page is gone; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | x: waiting, awaiting a result for ElementTarget(e1) |

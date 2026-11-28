@@ -25,6 +25,8 @@ enum Kind {
   oversized,
   changedUnseen,
   rowPageGone,
+  heldInTrash,
+  refusedAsPageDeleted,
   retired,
 }
 
@@ -47,6 +49,12 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       RowPageGone() => Kind.rowPageGone,
       RetiredFormat() => Kind.retired,
     },
+    Waiting() || Unanswered() || RefusedAgain()
+        when view.holds.any((hold) => hold is PageInTrash) =>
+      Kind.heldInTrash,
+    Waiting() || Unanswered() || RefusedAgain()
+        when view.holds.any((hold) => hold is RefusedAsPageDeleted) =>
+      Kind.refusedAsPageDeleted,
     Waiting() || Unanswered() || RefusedAgain()
         when view.holds.any((hold) => hold is BehindEntry) =>
       Kind.heldBehindEntry,
@@ -205,11 +213,22 @@ final rows = <Row>[
     ),
   ),
   Row(
-    'needs user: failed on the server with PAGE_DELETED',
+    'needs user: failed on the server with INVALID_OP',
+    () => answered(
+      const FailedAnswer('x', KnownFailure(FailureCode.invalidOp), 'invalid'),
+    ),
+  ),
+  Row(
+    'waiting: refused as its page deleted, until a page list says where the '
+    'page is',
     () => answered(
       const FailedAnswer('x', KnownFailure(FailureCode.pageDeleted), 'deleted'),
     ),
   ),
+  Row('waiting: held while its page is in the trash', () {
+    final client = Client()..edit(movePatch('x'));
+    return client..read(withOp(initialRows(), pageDelete('t', 'page-a')));
+  }),
   Row('needs user: unanswered for 29 days', () {
     final client = sentAndLost()..clock = now.add(resendWindow);
     return client..queue = look(client.queue, client.at).queue;

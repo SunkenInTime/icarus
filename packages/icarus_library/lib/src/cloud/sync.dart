@@ -18,7 +18,14 @@ enum Attention {
   retriesExhausted,
 }
 
-enum Underway { unsent, answerUnknown, sending, awaitingResult }
+enum Underway {
+  unsent,
+  answerUnknown,
+  sending,
+  awaitingResult,
+  pageInTrash,
+  refusedAsPageDeleted,
+}
 
 final class Tally {
   Tally({
@@ -54,61 +61,60 @@ final class Tally {
     );
   }
 
-  static Decoded<Tally> decode(Object? json) =>
-      JsonFields.read(json, 'sync tally', (fields) {
-        final standing = Standing.values.asNameMap()[fields.json['standing']];
-        if (standing == null) fields.reject('expected a standing');
-        Map<T, int> counts<T extends Enum>(String key, List<T> values) {
-          final found = <T, int>{};
-          final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
-          for (final MapEntry(:key, :value) in raw.entries) {
-            final name = values.asNameMap()[key];
-            if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
-              fields.reject('expected a positive count for "$key"');
-            } else {
-              found[name] = (value as num).toInt();
-            }
+  static Decoded<Tally> decode(Object? json) => JsonFields.read(
+    json,
+    'sync tally',
+    (fields) {
+      final standing = Standing.values.asNameMap()[fields.json['standing']];
+      if (standing == null) fields.reject('expected a standing');
+      Map<T, int> counts<T extends Enum>(String key, List<T> values) {
+        final found = <T, int>{};
+        final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
+        for (final MapEntry(:key, :value) in raw.entries) {
+          final name = values.asNameMap()[key];
+          if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
+            fields.reject('expected a positive count for "$key"');
+          } else {
+            found[name] = (value as num).toInt();
           }
-          return found;
         }
+        return found;
+      }
 
-        final waiting = counts('waiting', Underway.values);
-        final attention = counts('attention', Attention.values);
-        final unreadable = fields.has('unreadable')
-            ? fields.whole('unreadable')
-            : 0;
-        if (unreadable < 0) fields.reject('expected a count of unreadable');
-        final readsOwed = fields.has('readsOwed')
-            ? fields.whole('readsOwed')
-            : 0;
-        if (readsOwed < 0) fields.reject('expected a count of reads owed');
-        final readsRefused = fields.has('readsRefused')
-            ? fields.whole('readsRefused')
-            : 0;
-        if (readsRefused < 0) {
-          fields.reject('expected a count of reads refused');
-        }
-        final setAside = fields.has('setAside')
-            ? fields.whole('setAside')
-            : 0;
-        if (setAside < 0) fields.reject('expected a count of edits set aside');
-        final notYetRead = fields.has('notYetRead')
-            ? fields.whole('notYetRead')
-            : 0;
-        if (notYetRead < 0) {
-          fields.reject('expected a count of pages not yet read');
-        }
-        return () => Tally(
-          standing: standing!,
-          waiting: waiting,
-          attention: attention,
-          unreadable: unreadable,
-          readsOwed: readsOwed,
-          readsRefused: readsRefused,
-          setAside: setAside,
-          notYetRead: notYetRead,
-        );
-      });
+      final waiting = counts('waiting', Underway.values);
+      final attention = counts('attention', Attention.values);
+      final unreadable = fields.has('unreadable')
+          ? fields.whole('unreadable')
+          : 0;
+      if (unreadable < 0) fields.reject('expected a count of unreadable');
+      final readsOwed = fields.has('readsOwed') ? fields.whole('readsOwed') : 0;
+      if (readsOwed < 0) fields.reject('expected a count of reads owed');
+      final readsRefused = fields.has('readsRefused')
+          ? fields.whole('readsRefused')
+          : 0;
+      if (readsRefused < 0) {
+        fields.reject('expected a count of reads refused');
+      }
+      final setAside = fields.has('setAside') ? fields.whole('setAside') : 0;
+      if (setAside < 0) fields.reject('expected a count of edits set aside');
+      final notYetRead = fields.has('notYetRead')
+          ? fields.whole('notYetRead')
+          : 0;
+      if (notYetRead < 0) {
+        fields.reject('expected a count of pages not yet read');
+      }
+      return () => Tally(
+        standing: standing!,
+        waiting: waiting,
+        attention: attention,
+        unreadable: unreadable,
+        readsOwed: readsOwed,
+        readsRefused: readsRefused,
+        setAside: setAside,
+        notYetRead: notYetRead,
+      );
+    },
+  );
 
   final Standing standing;
   final Map<Underway, int> waiting;

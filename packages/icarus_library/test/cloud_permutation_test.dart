@@ -208,14 +208,38 @@ final class Scenario {
         if (page is LivePage) page.publicId,
     ];
     if (pages.length < 2) return;
-    final page = pick(pages);
+    final deleting = [
+      for (final entry in client.queue.entries)
+        if (entry case PendingOp(
+          op: PageDeleteOp(:final pagePublicId),
+        ) when pages.contains(pagePublicId))
+          pagePublicId,
+    ];
+    final page = deleting.isNotEmpty ? pick(deleting) : pick(pages);
     final before = server;
     server = withOp(
       server,
       pageDelete(fresh('t'), page, expected: server.strategy.revision),
     );
+    final views = entryViews(client.queue, now);
+    final onPage = [
+      for (final entry in client.queue.entries)
+        if (entry is PendingOp &&
+            (views[entry.id]?.sendable ?? false) &&
+            pagesOf(entry).contains(page))
+          entry.id,
+    ].take(3).toList();
+    if (onPage.isNotEmpty) {
+      final attempt = client.claim(onPage);
+      facts.addAll(answersFor((attempt, client.lastSent())));
+    }
     facts.add(pageRead(page));
     if (random.nextBool()) facts.add(headerRead());
+    if (random.nextInt(3) == 0) {
+      server = withoutPage(server, page);
+      facts.add(headerRead());
+      return;
+    }
     final live = before.page(page)! as LivePage;
     server = server.withRows([
       LivePage(
@@ -389,6 +413,10 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
   yield* go();
 }
 
+final heldCounts = <String, int>{};
+
+void countHeld(String what) => heldCounts[what] = (heldCounts[what] ?? 0) + 1;
+
 final class Delivered {
   Delivered(this.queue, this.at, this.effects, this.server);
 
@@ -403,6 +431,42 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
   var at = now;
   final server = model.copy();
   final effects = <String>[];
+  final held = <String>{};
+  final refused = <String>{};
+  final toUser = <String>{};
+  void tallyHolds(List<QueueEffect> made) {
+    final views = entryViews(queue, at);
+    for (final effect in made) {
+      if (effect case OpRemoved(cause: LetGoWithItsPage())) countHeld('let go');
+      if (effect case OpRemoved(cause: SentAgainAs())) countHeld('sent again');
+    }
+    for (final MapEntry(key: id, value: view) in views.entries) {
+      if (view.holds.contains(const RefusedAsPageDeleted()) &&
+          refused.add(id)) {
+        countHeld('refused as its page deleted');
+      }
+      if (view.state case NeedsUser(
+        reason: RefusedByServer(
+          refusal: FailedOnServer(
+            code: KnownFailure(code: FailureCode.pageDeleted),
+          ),
+        ),
+      ) when toUser.add(id)) {
+        countHeld('went to the user');
+      }
+    }
+    for (final MapEntry(key: id, value: view) in views.entries) {
+      final inTrash = view.holds.any((hold) => hold is PageInTrash);
+      if (inTrash && held.add(id)) countHeld('held');
+      if (!inTrash && held.remove(id)) {
+        countHeld(
+          view.state == const NeedsUser(RowPageGone()) ? 'gone' : 'lifted',
+        );
+      }
+    }
+    held.removeWhere((id) => !views.containsKey(id));
+  }
+
   List<QueueEffect> step(QueueEvent event) {
     if (transition(queue, event, now: at) case Stepped(
       queue: final next,
@@ -410,6 +474,7 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     )) {
       queue = next;
       effects.addAll([for (final effect in made) '$effect']);
+      tallyHolds(made);
       return made;
     }
     return const [];
@@ -593,7 +658,8 @@ String describe(CloudQueue queue, DateTime at) {
 
 void main() {
   final seeds =
-      int.tryParse(Platform.environment['CLOUD_PERMUTATION_SEEDS'] ?? '') ?? 80;
+      int.tryParse(Platform.environment['CLOUD_PERMUTATION_SEEDS'] ?? '') ??
+      200;
   final one = int.tryParse(
     Platform.environment['CLOUD_PERMUTATION_SEED'] ?? '',
   );
@@ -655,9 +721,21 @@ void main() {
     printOnFailure('$orders orders of $factsSeen facts');
     if (Platform.environment['CLOUD_PERMUTATION_COUNTS'] == '1') {
       stdout.writeln('$orders orders of $factsSeen facts');
+      for (final MapEntry(:key, :value) in heldCounts.entries) {
+        stdout.writeln('$key: $value');
+      }
     }
     if (one != null) return;
     expect(orders, greaterThan(seeds * 20));
     expect(claimed, greaterThan(seeds));
+    for (final reached in [
+      'held',
+      'lifted',
+      'gone',
+      'refused as its page deleted',
+      'sent again',
+    ]) {
+      expect(heldCounts[reached] ?? 0, greaterThan(0), reason: reached);
+    }
   });
 }
