@@ -4,9 +4,11 @@ import {
   type TestConvexForDataModelAndIdentity,
 } from "convex-test";
 import { makeFunctionReference } from "convex/server";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import { markAssetReferencesReady } from "./lib/assetReferences";
+import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -23,6 +25,10 @@ const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
 const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const getShell = makeFunctionReference<"query">("strategy:getShell");
 const getPageList = makeFunctionReference<"query">("strategy:getPageList");
+const listTrashed = makeFunctionReference<"query">("pages:listTrashed");
+const purgeTrashedPages = makeFunctionReference<"mutation">(
+  "maintenance:purgeTrashedPages",
+);
 
 type Harness = TestConvexForDataModel<DataModel>;
 type Who = "owner" | "editor" | "viewer" | "stranger";
@@ -46,8 +52,18 @@ type ListedPage = Descriptor & {
   contentUpdatedAt: number;
 };
 
+type TrashedEntry = Omit<Descriptor, "updatedAt"> & {
+  deletedAt: number;
+  restorableUntil: number;
+  deletedBy: "you" | "unknown" | { name: string };
+};
+
 type Header = { revision: number; role: string } & Record<string, unknown>;
-type PageList = { header: Header; pages: ListedPage[] };
+type PageList = {
+  header: Header;
+  pages: ListedPage[];
+  trashedPages?: TrashedEntry[];
+};
 type Shell = { header: Header; pages: Descriptor[] };
 
 const strategyPublicId = "page-list";
@@ -409,5 +425,314 @@ describe("strategy:getPageList", () => {
         contentRevision: before.pages[0]!.contentRevision + 1,
       });
     });
+  });
+});
+
+describe("strategy:getPageList with includeTrashed", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function listWithTrash(
+    who: Harness,
+    includeTrashed?: boolean,
+  ): Promise<PageList> {
+    return who.query(getPageList, {
+      ...protocol,
+      strategyPublicId,
+      ...(includeTrashed === undefined ? {} : { includeTrashed }),
+    }) as Promise<PageList>;
+  }
+
+  async function addNamedPage(
+    who: Harness,
+    pagePublicId: string,
+    { name, isAutoNamed }: { name: string; isAutoNamed: boolean },
+  ) {
+    const { header, pages } = await pageList(who);
+    await apply(who, [
+      {
+        type: "page.add",
+        pagePublicId,
+        payload: { name, isAutoNamed, isAttack: pages.length % 2 === 0 },
+        sortIndex: pages.length,
+        expectedStrategyRevision: header.revision,
+      },
+    ]);
+  }
+
+  async function deletePage(who: Harness, pagePublicId: string) {
+    const { header } = await pageList(who);
+    await apply(who, [
+      {
+        type: "page.delete",
+        pagePublicId,
+        expectedStrategyRevision: header.revision,
+      },
+    ]);
+  }
+
+  function asTrashed(
+    page: ListedPage,
+    deletedAt: number,
+    deletedBy: TrashedEntry["deletedBy"],
+  ): TrashedEntry {
+    const { updatedAt: _updated, ...descriptor } = withoutContent(page);
+    return {
+      ...descriptor,
+      deletedAt,
+      restorableUntil: deletedAt + PAGE_TRASH_RETENTION_MS,
+      deletedBy,
+    };
+  }
+
+  const listed = (list: PageList, publicId: string) =>
+    list.pages.find((page) => page.publicId === publicId)!;
+
+  test("without it the answer is what it was, pages in the trash or not", async () => {
+    const { users } = await createHarness();
+    await addPage(users.owner, "page-2", 1);
+    await addPage(users.owner, "page-3", 2);
+    await deletePage(users.owner, "page-2");
+
+    for (const who of [users.owner, users.editor, users.viewer]) {
+      const plain = await listWithTrash(who);
+      const off = await listWithTrash(who, false);
+      const on = await listWithTrash(who, true);
+      expect(Object.keys(plain)).toEqual(["header", "pages"]);
+      expect(JSON.stringify(off)).toBe(JSON.stringify(plain));
+      expect(JSON.stringify({ header: on.header, pages: on.pages })).toBe(
+        JSON.stringify(plain),
+      );
+      expect(plain.pages.map(withoutContent)).toEqual((await shell(who)).pages);
+    }
+  });
+
+  test("the owner and an editor teammate get each restorable page, newest first, as it was when deleted", async () => {
+    vi.useFakeTimers();
+    const { users } = await createHarness();
+    await addNamedPage(users.owner, "page-2", {
+      name: "Page 2",
+      isAutoNamed: true,
+    });
+    await addNamedPage(users.owner, "page-3", {
+      name: "Retake",
+      isAutoNamed: false,
+    });
+    await addPage(users.owner, "page-4", 3);
+    vi.setSystemTime(Date.now() + 60_000);
+    const beforeOwnerDelete = await pageList(users.owner);
+    const ownerDeletedAt = Date.now();
+    await deletePage(users.owner, "page-2");
+    vi.setSystemTime(ownerDeletedAt + 60_000);
+    const beforeEditorDelete = await pageList(users.owner);
+    const editorDeletedAt = Date.now();
+    await deletePage(users.editor, "page-3");
+    const live = await pageList(users.owner);
+
+    const owner = await listWithTrash(users.owner, true);
+    expect(owner.trashedPages).toEqual([
+      asTrashed(listed(beforeEditorDelete, "page-3"), editorDeletedAt, { name: "editor" }),
+      asTrashed(listed(beforeOwnerDelete, "page-2"), ownerDeletedAt, "you"),
+    ]);
+    const editor = await listWithTrash(users.editor, true);
+    expect(editor.trashedPages).toEqual([
+      asTrashed(listed(beforeEditorDelete, "page-3"), editorDeletedAt, "you"),
+      asTrashed(listed(beforeOwnerDelete, "page-2"), ownerDeletedAt, { name: "owner" }),
+    ]);
+    expect(owner.pages).toEqual(live.pages);
+    expect(editor.pages).toEqual(live.pages);
+
+    const dialog = (await users.owner.query(listTrashed, {
+      strategyPublicId,
+    })) as Array<{
+      publicId: string;
+      name: string;
+      deletedAt: number;
+      restorableUntil: number;
+    }>;
+    expect(
+      owner.trashedPages!.map(
+        ({ publicId, name, deletedAt, restorableUntil }) => ({
+          publicId,
+          name,
+          deletedAt,
+          restorableUntil,
+        }),
+      ),
+    ).toEqual(
+      dialog.map(({ publicId, name, deletedAt, restorableUntil }) => ({
+        publicId,
+        name,
+        deletedAt,
+        restorableUntil,
+      })),
+    );
+  });
+
+  test("a viewer who asks gets none, signed in or through a share link", async () => {
+    const { t, users } = await createHarness();
+    await addPage(users.owner, "page-2", 1);
+    await deletePage(users.owner, "page-2");
+    const shareToken = "view-only-link";
+    await users.owner.mutation(createShare, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: shareToken,
+      role: "viewer",
+    });
+
+    expect((await listWithTrash(users.owner, true)).trashedPages).toHaveLength(1);
+    const viewer = await listWithTrash(users.viewer, true);
+    expect(viewer.header.role).toBe("viewer");
+    expect(viewer.trashedPages).toEqual([]);
+    const throughLink = (await t.query(getPageList, {
+      ...protocol,
+      strategyPublicId,
+      shareToken,
+      includeTrashed: true,
+    })) as PageList;
+    expect(throughLink.header.role).toBe("viewer");
+    expect(throughLink.trashedPages).toEqual([]);
+  });
+
+  test("an editor link that was never redeemed gets none, signed in or out", async () => {
+    const { t, users } = await createHarness();
+    await addPage(users.owner, "page-2", 1);
+    await deletePage(users.owner, "page-2");
+    const shareToken = "unredeemed-edit-link";
+    await users.owner.mutation(createShare, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: shareToken,
+      role: "editor",
+    });
+
+    expect((await listWithTrash(users.owner, true)).trashedPages).toHaveLength(1);
+    for (const who of [t, users.stranger]) {
+      const throughLink = (await who.query(getPageList, {
+        ...protocol,
+        strategyPublicId,
+        shareToken,
+        includeTrashed: true,
+      })) as PageList;
+      expect(throughLink.header.role).toBe("viewer");
+      expect(throughLink.trashedPages).toEqual([]);
+    }
+  });
+
+  test("a page is sent while its row lives, restorable until its time in the trash is up, then gone once purged", async () => {
+    vi.useFakeTimers();
+    const { t, users } = await createHarness();
+    await t.run(markAssetReferencesReady);
+    await addPage(users.owner, "page-2", 1);
+    await deletePage(users.owner, "page-2");
+    const sent = (await listWithTrash(users.owner, true)).trashedPages![0]!;
+    const timeUp = sent.deletedAt + PAGE_TRASH_RETENTION_MS;
+    const ids = (list: PageList) =>
+      list.trashedPages!.map((page) => page.publicId);
+
+    vi.setSystemTime(timeUp - 1);
+    expect(ids(await listWithTrash(users.owner, true))).toEqual(["page-2"]);
+
+    vi.setSystemTime(timeUp);
+    const atTheMoment = await listWithTrash(users.owner, true);
+    expect(atTheMoment.trashedPages).toEqual([sent]);
+    expect(atTheMoment.trashedPages![0]!.restorableUntil).toBe(Date.now());
+    const { results } = (await users.owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId,
+      clientId: "client",
+      checkTrashedPageDeletes: true,
+      ops: [
+        {
+          opId: `op-${++opCounter}`,
+          type: "page.restore",
+          pagePublicId: "page-2",
+        },
+      ],
+    })) as { results: Array<Record<string, unknown>> };
+    expect(results).toMatchObject([
+      { status: "rejected", reason: "not_found" },
+    ]);
+    expect(ids(await listWithTrash(users.owner, true))).toEqual(["page-2"]);
+
+    vi.setSystemTime(timeUp + 1);
+    await t.mutation(purgeTrashedPages, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await listWithTrash(users.owner, true)).trashedPages).toEqual([]);
+  });
+
+  test("an entry holds everything a restore changes: the pages after it are the list it was sent with, the page put back", async () => {
+    const { users } = await createHarness();
+    for (const [pagePublicId, name, isAutoNamed] of [
+      ["page-2", "Page 2", true],
+      ["page-3", "Page 3", true],
+      ["page-4", "Retake", false],
+    ] as const) {
+      await addNamedPage(users.owner, pagePublicId, { name, isAutoNamed });
+    }
+    await deletePage(users.owner, "page-3");
+    await deletePage(users.owner, "page-2");
+
+    const restoredHere = (list: PageList, publicId: string) => {
+      const entry = list.trashedPages!.find(
+        (page) => page.publicId === publicId,
+      )!;
+      const {
+        deletedAt: _at,
+        restorableUntil: _until,
+        deletedBy: _by,
+        ...page
+      } = entry;
+      const ordered: Omit<Descriptor, "updatedAt">[] = list.pages.map(
+        (listedPage) => {
+          const { updatedAt: _updated, ...descriptor } =
+            withoutContent(listedPage);
+          return descriptor;
+        },
+      );
+      const place = Math.max(0, Math.min(page.sortIndex, ordered.length));
+      ordered.splice(place, 0, page);
+      return ordered.map((held, index) => {
+        const name = held.isAutoNamed === true ? `Page ${index + 1}` : held.name;
+        const moved = held.sortIndex !== index || held.name !== name;
+        return {
+          ...held,
+          name,
+          sortIndex: index,
+          revision: moved ? held.revision + 1 : held.revision,
+        };
+      });
+    };
+    const fromServer = (list: PageList) =>
+      list.pages.map((listed) => {
+        const { updatedAt: _updated, ...descriptor } = withoutContent(listed);
+        return descriptor;
+      });
+
+    for (const publicId of ["page-3", "page-2"]) {
+      const before = await listWithTrash(users.owner, true);
+      const expected = restoredHere(before, publicId);
+      await apply(users.owner, [{ type: "page.restore", pagePublicId: publicId }]);
+      const after = await listWithTrash(users.owner, true);
+      expect(fromServer(after)).toEqual(expected);
+      expect(
+        after.trashedPages!.some((page) => page.publicId === publicId),
+      ).toBe(false);
+    }
+    expect(
+      fromServer(await listWithTrash(users.owner, true)).map((page) => [
+        page.publicId,
+        page.name,
+      ]),
+    ).toEqual([
+      [firstPage, "Page 1"],
+      ["page-2", "Page 2"],
+      ["page-4", "Retake"],
+      ["page-3", "Page 4"],
+    ]);
   });
 });

@@ -1112,6 +1112,468 @@
           "budget": 0
         }
       }
+    },
+    "pageListTrash0": {
+      "title": "Read a page list with 0 pages in the trash",
+      "about": "One strategy:getPageList with includeTrashed, the account named, of a strategy of 4 live pages and 0 in the trash, all deleted by the reader, after it changed. The note gives the same read without includeTrashed, which every shipped client makes and which reads no page in the trash.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 2898,
+          "budget": 3623
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 137,
+          "budget": 172
+        },
+        "returnBytes": {
+          "today": 1695,
+          "budget": 2119
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "pageListTrash5": {
+      "title": "Read a page list with 5 pages in the trash",
+      "about": "One strategy:getPageList with includeTrashed, the account named, of a strategy of 4 live pages and 5 in the trash, all deleted by the reader, after it changed. The note gives the same read without includeTrashed, which every shipped client makes and which reads no page in the trash.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 5389,
+          "budget": 6737
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 137,
+          "budget": 172
+        },
+        "returnBytes": {
+          "today": 3027,
+          "budget": 3784
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "pageListTrash50": {
+      "title": "Read a page list with 50 pages in the trash",
+      "about": "One strategy:getPageList with includeTrashed, the account named, of a strategy of 4 live pages and 50 in the trash, all deleted by the reader, after it changed. The note gives the same read without includeTrashed, which every shipped client makes and which reads no page in the trash.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 24065,
+          "budget": 30082
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 137,
+          "budget": 172
+        },
+        "returnBytes": {
+          "today": 15063,
+          "budget": 18829
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "openFiveStoreTrash": {
+      "title": "Open a 5-page strategy cold, the store's editor, 5 pages in the trash",
+      "about": "openFiveStore's open on a strategy of 5 live pages of 60 items and 5 deleted ones of 60 items, with the page list watched with includeTrashed: the store's first open of a strategy with pages in the trash once it asks for them. pages:listTrashed is still read, as the store's editor reads it today.",
+      "metrics": {
+        "functionCalls": {
+          "today": 4,
+          "budget": 6
+        },
+        "readBytes": {
+          "today": 56103,
+          "budget": 70129
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 497,
+          "budget": 622
+        },
+        "returnBytes": {
+          "today": 47164,
+          "budget": 58955
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "trashListMove0": {
+      "title": "One edit under a page list with 0 pages in the trash: move",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 0 in the trash, the page list watched with includeTrashed and the account named, then an agent on the first page moved (element.patch), sent as the store's sender sends it. Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 103739,
+          "budget": 129674
+        },
+        "writeBytes": {
+          "today": 2219,
+          "budget": 2774
+        },
+        "sentBytes": {
+          "today": 2093,
+          "budget": 2617
+        },
+        "returnBytes": {
+          "today": 85354,
+          "budget": 106693
+        },
+        "queryReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReruns": {
+          "today": 0,
+          "budget": 0
+        },
+        "pageListReadBytes": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "trashListMove5": {
+      "title": "One edit under a page list with 5 pages in the trash: move",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 5 in the trash, the page list watched with includeTrashed and the account named, then an agent on the first page moved (element.patch), sent as the store's sender sends it. Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 103742,
+          "budget": 129678
+        },
+        "writeBytes": {
+          "today": 2222,
+          "budget": 2778
+        },
+        "sentBytes": {
+          "today": 2094,
+          "budget": 2618
+        },
+        "returnBytes": {
+          "today": 85384,
+          "budget": 106730
+        },
+        "queryReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReruns": {
+          "today": 0,
+          "budget": 0
+        },
+        "pageListReadBytes": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "trashListMove50": {
+      "title": "One edit under a page list with 50 pages in the trash: move",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 50 in the trash, the page list watched with includeTrashed and the account named, then an agent on the first page moved (element.patch), sent as the store's sender sends it. Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 7,
+          "budget": 9
+        },
+        "readBytes": {
+          "today": 103719,
+          "budget": 129649
+        },
+        "writeBytes": {
+          "today": 2220,
+          "budget": 2775
+        },
+        "sentBytes": {
+          "today": 2094,
+          "budget": 2618
+        },
+        "returnBytes": {
+          "today": 85324,
+          "budget": 106655
+        },
+        "queryReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReruns": {
+          "today": 0,
+          "budget": 0
+        },
+        "pageListReadBytes": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "trashListSettings0": {
+      "title": "One edit under a page list with 0 pages in the trash: settings",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 0 in the trash, the page list watched with includeTrashed and the account named, then the first page's settings changed (pageContent.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 103839,
+          "budget": 129799
+        },
+        "writeBytes": {
+          "today": 1314,
+          "budget": 1643
+        },
+        "sentBytes": {
+          "today": 1672,
+          "budget": 2090
+        },
+        "returnBytes": {
+          "today": 87219,
+          "budget": 109024
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 2978,
+          "budget": 3723
+        }
+      }
+    },
+    "trashListSettings5": {
+      "title": "One edit under a page list with 5 pages in the trash: settings",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 5 in the trash, the page list watched with includeTrashed and the account named, then the first page's settings changed (pageContent.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 106348,
+          "budget": 132935
+        },
+        "writeBytes": {
+          "today": 1314,
+          "budget": 1643
+        },
+        "sentBytes": {
+          "today": 1672,
+          "budget": 2090
+        },
+        "returnBytes": {
+          "today": 88699,
+          "budget": 110874
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 5469,
+          "budget": 6837
+        }
+      }
+    },
+    "trashListSettings50": {
+      "title": "One edit under a page list with 50 pages in the trash: settings",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 50 in the trash, the page list watched with includeTrashed and the account named, then the first page's settings changed (pageContent.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 125001,
+          "budget": 156252
+        },
+        "writeBytes": {
+          "today": 1314,
+          "budget": 1643
+        },
+        "sentBytes": {
+          "today": 1672,
+          "budget": 2090
+        },
+        "returnBytes": {
+          "today": 102255,
+          "budget": 127819
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 24145,
+          "budget": 30182
+        }
+      }
+    },
+    "trashListRename0": {
+      "title": "One edit under a page list with 0 pages in the trash: rename",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 0 in the trash, the page list watched with includeTrashed and the account named, then the first page renamed (page.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 111562,
+          "budget": 139453
+        },
+        "writeBytes": {
+          "today": 1640,
+          "budget": 2050
+        },
+        "sentBytes": {
+          "today": 1634,
+          "budget": 2043
+        },
+        "returnBytes": {
+          "today": 87012,
+          "budget": 108765
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 2903,
+          "budget": 3629
+        }
+      }
+    },
+    "trashListRename5": {
+      "title": "One edit under a page list with 5 pages in the trash: rename",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 5 in the trash, the page list watched with includeTrashed and the account named, then the first page renamed (page.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 116128,
+          "budget": 145160
+        },
+        "writeBytes": {
+          "today": 1640,
+          "budget": 2050
+        },
+        "sentBytes": {
+          "today": 1634,
+          "budget": 2043
+        },
+        "returnBytes": {
+          "today": 88546,
+          "budget": 110683
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 5394,
+          "budget": 6743
+        }
+      }
+    },
+    "trashListRename50": {
+      "title": "One edit under a page list with 50 pages in the trash: rename",
+      "about": "The store's editor open on a strategy of 4 live pages (60 items on the first) and 50 in the trash, the page list watched with includeTrashed and the account named, then the first page renamed (page.patch). Page list re-runs and the bytes they read are what the trash costs a live list on each edit.",
+      "metrics": {
+        "functionCalls": {
+          "today": 8,
+          "budget": 10
+        },
+        "readBytes": {
+          "today": 153477,
+          "budget": 191847
+        },
+        "writeBytes": {
+          "today": 1640,
+          "budget": 2050
+        },
+        "sentBytes": {
+          "today": 1634,
+          "budget": 2043
+        },
+        "returnBytes": {
+          "today": 102098,
+          "budget": 127623
+        },
+        "queryReruns": {
+          "today": 2,
+          "budget": 2
+        },
+        "pageListReruns": {
+          "today": 1,
+          "budget": 1
+        },
+        "pageListReadBytes": {
+          "today": 24070,
+          "budget": 30088
+        }
+      }
     }
   }
 }

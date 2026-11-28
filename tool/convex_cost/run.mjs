@@ -53,6 +53,7 @@ function parseArgs(argv) {
 const METRICS = {
   listReruns: { label: "library list re-runs", unit: "", headroom: 0.2 },
   pageListReruns: { label: "page list re-runs", unit: "", headroom: 0 },
+  pageListReadBytes: { label: "bytes read by page list re-runs", unit: "B", headroom: 0.25 },
   listReadBytes: { label: "bytes read by library list re-runs", unit: "B", headroom: 0.25 },
   readBytes: { label: "bytes read in all", unit: "B", headroom: 0.25 },
   applyBatchReadBytes: { label: "bytes applyBatch read", unit: "B", headroom: 0.25 },

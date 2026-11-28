@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import { withoutLaterFields } from "./elementFields";
 import { withoutPictureId } from "./imageAssets";
+import { PAGE_TRASH_RETENTION_MS } from "./entities";
 
 export function serializeStrategyHeader(
   strategy: Doc<"strategies">,
@@ -35,6 +36,28 @@ export function serializePageDescriptor(
     revision: page.revision,
     createdAt: page.createdAt,
     updatedAt: page.updatedAt,
+  };
+}
+
+export function serializeTrashedPageEntry(
+  strategyPublicId: string,
+  page: Doc<"pages">,
+  deletedBy: "you" | "unknown" | { name: string },
+) {
+  return {
+    publicId: page.publicId,
+    strategyPublicId,
+    name: page.name,
+    ...(page.isAutoNamed === undefined
+      ? {}
+      : { isAutoNamed: page.isAutoNamed }),
+    sortIndex: page.sortIndex,
+    isAttack: page.isAttack,
+    revision: page.revision,
+    createdAt: page.createdAt,
+    deletedAt: page.deletedAt!,
+    restorableUntil: page.deletedAt! + PAGE_TRASH_RETENTION_MS,
+    deletedBy,
   };
 }
 

@@ -5878,9 +5878,15 @@ final class StrategyGetFullSnapshotResultPagesItem {
 }
 
 final class StrategyGetPageListResult {
-  const StrategyGetPageListResult({required this.header, required this.pages});
+  const StrategyGetPageListResult({
+    required this.header,
+    required this.pages,
+    this.trashedPages = const ConvexOptional.absent(),
+  });
   final StrategiesGetHeaderResult header;
   final List<StrategyGetFullSnapshotResultPagesItem> pages;
+  final ConvexOptional<List<StrategyGetPageListResultTrashedPagesItem>>
+  trashedPages;
 
   factory StrategyGetPageListResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
@@ -5901,6 +5907,20 @@ final class StrategyGetPageListResult {
                 ),
               )
               .toList(growable: false),
+      trashedPages: object.value.containsKey('trashedPages')
+          ? ConvexOptional.present(
+              _decodeArray(object.value['trashedPages']!, '$path.trashedPages')
+                  .value
+                  .indexed
+                  .map(
+                    (entry) => StrategyGetPageListResultTrashedPagesItem.decode(
+                      entry.$2,
+                      _indexPath('$path.trashedPages', entry.$1),
+                    ),
+                  )
+                  .toList(growable: false),
+            )
+          : const ConvexOptional.absent(),
     );
   }
 
@@ -5914,6 +5934,121 @@ final class StrategyGetPageListResult {
             )
             .toList(growable: false),
       ),
+      if (trashedPages.isPresent)
+        'trashedPages': ConvexArray(
+          trashedPages.value.indexed
+              .map(
+                (entry) =>
+                    entry.$2.encode(_indexPath('$path.trashedPages', entry.$1)),
+              )
+              .toList(growable: false),
+        ),
+    });
+  }
+}
+
+final class StrategyGetPageListResultTrashedPagesItem {
+  const StrategyGetPageListResultTrashedPagesItem({
+    required this.createdAt,
+    required this.deletedAt,
+    required this.deletedBy,
+    required this.isAttack,
+    required this.name,
+    required this.publicId,
+    required this.restorableUntil,
+    required this.revision,
+    required this.sortIndex,
+    required this.strategyPublicId,
+    this.isAutoNamed = const ConvexOptional.absent(),
+  });
+  final double createdAt;
+  final double deletedAt;
+  final ConvexValue deletedBy;
+  final bool isAttack;
+  final ConvexOptional<bool> isAutoNamed;
+  final String name;
+  final String publicId;
+  final double restorableUntil;
+  final double revision;
+  final double sortIndex;
+  final String strategyPublicId;
+
+  factory StrategyGetPageListResultTrashedPagesItem.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return StrategyGetPageListResultTrashedPagesItem(
+      createdAt: _decodeNumber(
+        object.value['createdAt'] ?? _missing(path, 'createdAt'),
+        '$path.createdAt',
+      ),
+      deletedAt: _decodeNumber(
+        object.value['deletedAt'] ?? _missing(path, 'deletedAt'),
+        '$path.deletedAt',
+      ),
+      deletedBy: _decodeRaw(
+        object.value['deletedBy'] ?? _missing(path, 'deletedBy'),
+        '$path.deletedBy',
+        _validateStrategyGetPageListResultTrashedPagesItemDeletedBy,
+      ),
+      isAttack: _decodeBoolean(
+        object.value['isAttack'] ?? _missing(path, 'isAttack'),
+        '$path.isAttack',
+      ),
+      isAutoNamed: object.value.containsKey('isAutoNamed')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['isAutoNamed']!, '$path.isAutoNamed'),
+            )
+          : const ConvexOptional.absent(),
+      name: _decodeString(
+        object.value['name'] ?? _missing(path, 'name'),
+        '$path.name',
+      ),
+      publicId: _decodeString(
+        object.value['publicId'] ?? _missing(path, 'publicId'),
+        '$path.publicId',
+      ),
+      restorableUntil: _decodeNumber(
+        object.value['restorableUntil'] ?? _missing(path, 'restorableUntil'),
+        '$path.restorableUntil',
+      ),
+      revision: _decodeNumber(
+        object.value['revision'] ?? _missing(path, 'revision'),
+        '$path.revision',
+      ),
+      sortIndex: _decodeNumber(
+        object.value['sortIndex'] ?? _missing(path, 'sortIndex'),
+        '$path.sortIndex',
+      ),
+      strategyPublicId: _decodeString(
+        object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
+        '$path.strategyPublicId',
+      ),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
+      'deletedAt': _encodeNumber(deletedAt, '$path.deletedAt'),
+      'deletedBy': _decodeRaw(
+        deletedBy,
+        '$path.deletedBy',
+        _validateStrategyGetPageListResultTrashedPagesItemDeletedBy,
+      ),
+      'isAttack': ConvexBoolean(isAttack),
+      if (isAutoNamed.isPresent)
+        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
+      'name': ConvexString(name),
+      'publicId': ConvexString(publicId),
+      'restorableUntil': _encodeNumber(
+        restorableUntil,
+        '$path.restorableUntil',
+      ),
+      'revision': _encodeNumber(revision, '$path.revision'),
+      'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
+      'strategyPublicId': ConvexString(strategyPublicId),
     });
   }
 }
@@ -6672,6 +6807,20 @@ bool _matchesRaw33(ConvexValue value) =>
     (value.value['ok'] != null && _matchesRaw1(value.value['ok']!)) &&
     (value.value['reused'] != null && _matchesRaw1(value.value['reused']!)) &&
     (value.value['revision'] != null && _matchesRaw4(value.value['revision']!));
+
+bool _validateStrategyGetPageListResultTrashedPagesItemDeletedBy(
+  ConvexValue value,
+) => (_matchesRaw34(value) || _matchesRaw35(value) || _matchesRaw36(value));
+
+bool _matchesRaw34(ConvexValue value) =>
+    value is ConvexString && value.value == 'you';
+
+bool _matchesRaw35(ConvexValue value) =>
+    value is ConvexString && value.value == 'unknown';
+
+bool _matchesRaw36(ConvexValue value) =>
+    value is ConvexObject &&
+    (value.value['name'] != null && _matchesRaw11(value.value['name']!));
 
 ConvexObject encodeCommunityCopyPostArgs({
   required double clientProtocolVersion,
@@ -8297,6 +8446,7 @@ StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
 ConvexObject encodeStrategyGetPageListArgs({
   ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
+  ConvexOptional<bool> includeTrashed = const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
@@ -8306,6 +8456,8 @@ ConvexObject encodeStrategyGetPageListArgs({
     clientProtocolVersion,
     'strategy.js:getPageList.args.clientProtocolVersion',
   ),
+  if (includeTrashed.isPresent)
+    'includeTrashed': ConvexBoolean(includeTrashed.value),
   if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });

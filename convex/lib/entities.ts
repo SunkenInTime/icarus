@@ -1,6 +1,7 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { conflictError, invalidOpError, notFoundError } from "./errors";
+import { UNKNOWN_DISPLAY_NAME } from "./profile";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -130,6 +131,40 @@ export async function listRestorablePages(
     )
     .order("desc")
     .collect();
+}
+
+export async function listTrashedPages(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<Doc<"pages">[]> {
+  return await ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+    )
+    .order("desc")
+    .collect();
+}
+
+export async function deleterNamesOf(
+  ctx: AnyCtx,
+  pages: Doc<"pages">[],
+): Promise<Map<Id<"users">, string | null>> {
+  const ids = [
+    ...new Set(
+      pages.flatMap((page) =>
+        page.deletedBy === undefined ? [] : [page.deletedBy],
+      ),
+    ),
+  ];
+  const users = await Promise.all(ids.map((id) => ctx.db.get(id)));
+  return new Map(
+    ids.map((id, index) => {
+      const user = users[index]!;
+      const named = user !== null && user.displayName !== UNKNOWN_DISPLAY_NAME;
+      return [id, named ? user.displayName : null];
+    }),
+  );
 }
 
 /// The strategy's pages, leaving out those in the trash. Read through an
