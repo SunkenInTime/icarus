@@ -65,17 +65,37 @@ sealed class Written {
   const Written();
 }
 
+sealed class NotApplied {
+  const NotApplied();
+}
+
+final class QueueDeclined extends NotApplied {
+  const QueueDeclined(this.why);
+
+  final Inapplicable why;
+
+  @override
+  String toString() => '$why';
+}
+
+final class EditGoesThroughCommit extends NotApplied {
+  const EditGoesThroughCommit();
+
+  @override
+  String toString() => 'an edit goes through commit';
+}
+
 final class WrittenWith extends Written {
   WrittenWith(
     List<QueueEffect> effects, {
     required this.session,
-    required List<String> notApplied,
+    required List<NotApplied> notApplied,
   })  : effects = List.unmodifiable(effects),
         notApplied = List.unmodifiable(notApplied);
 
   final List<QueueEffect> effects;
   final int? session;
-  final List<String> notApplied;
+  final List<NotApplied> notApplied;
 }
 
 final class WriteTroubled extends Written {
@@ -369,7 +389,7 @@ base class SenderStore {
     switch (result) {
       case Saved(:final value):
         final effects = <QueueEffect>[];
-        final notApplied = <String>[];
+        final notApplied = <NotApplied>[];
         for (final (at, outcome) in value.outcomes.indexed) {
           switch (outcome) {
             case ReportApplied(effects: final applied):
@@ -379,10 +399,10 @@ base class SenderStore {
               effects.addAll(opened);
             case ReportNotApplicable(:final why, effects: final opened):
               effects.addAll(opened);
-              notApplied.add('$why');
+              notApplied.add(QueueDeclined(why));
               report(EventNotApplied(strategyId, '$why'));
             case EditsGoThroughCommit():
-              notApplied.add('an edit goes through commit');
+              notApplied.add(const EditGoesThroughCommit());
           }
         }
         report(
@@ -438,7 +458,7 @@ base class SenderStore {
   Future<Written> _writtenWith(
     String strategyId,
     List<QueueEffect> effects,
-    List<String> notApplied,
+    List<NotApplied> notApplied,
     bool readSession,
   ) async {
     if (!readSession) {

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -103,6 +104,9 @@ void main() {
             world.pagesOnServer(['p2']);
             world.sender.adopt(strategyId);
             world.settle(const Duration(minutes: 1));
+            world
+              ..show(pageId)
+              ..show('p2');
             world.server.overrideRead = (call) => call.page == 'p2'
                 ? const StoreReadAnswered(PageGone('nowhere'),
                     point: stampedWhenAnswered)
@@ -196,7 +200,7 @@ void main() {
         };
         world.commitMove(1);
         world.settle(const Duration(seconds: 6));
-        expect(pageReads(world, pageId), hasLength(greaterThan(2)));
+        expect(pageReads(world, pageId), hasLength(2));
         expect(world.face(), isNot(Face.unreadableWork));
         world.settle(const Duration(seconds: 1));
         expect(world.face(), Face.unreadableWork);
@@ -247,6 +251,7 @@ void main() {
                   'upgrade',
                   point: stampedWhenAnswered,
                 );
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
           world.sender.adopt(strategyId);
           world.settle(const Duration(minutes: 10));
           expect(world.face(), Face.upgradeRequired);

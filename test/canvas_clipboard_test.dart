@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
@@ -166,6 +167,8 @@ void main() {
     // The strategy's pictures 'img' and 'shot' are on disk, so a paste can
     // show them.
     storage = Directory.systemTemp.createTempSync('icarus-clipboard-');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (_) async => storage.path);
     File('${storage.path}/images/img.png')
       ..createSync(recursive: true)
       ..writeAsBytesSync([1, 2, 3]);
@@ -174,6 +177,8 @@ void main() {
   });
   tearDown(() {
     _storage = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, null);
     storage.deleteSync(recursive: true);
   });
 
@@ -415,3 +420,5 @@ void main() {
     );
   });
 }
+
+const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');

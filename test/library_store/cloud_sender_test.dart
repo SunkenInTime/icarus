@@ -50,8 +50,9 @@ void main() {
           world.server.connection = 2;
           return Future.value(world.server.answerNow(call));
         });
+        world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
         world.sender.adopt(strategyId);
-        world.settle();
+        world.settle(const Duration(seconds: 12));
         final opened = world.cloud().queue;
         expect(
           opened.session.generation,
@@ -173,7 +174,7 @@ void main() {
         'STRATEGY_REPLACED': (
           const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
               point: stampedWhenAnswered),
-          ['send move-1', 'list', 'page p1'],
+          ['send move-1', 'list'],
         ),
         'ACCOUNT_MISMATCH': (
           const StoreBatchAccountMismatch('refused',
@@ -441,7 +442,7 @@ void main() {
         });
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
-        expect(world.server.log, ['send move-1', 'list', 'page p1']);
+        expect(world.server.log, ['send move-1', 'list']);
         expect(world.queueLength(), 0);
         expect(world.cloud().queue.strategy.setAside.count, 2);
         expect(world.face(), Face.strategyReplaced);
@@ -490,7 +491,7 @@ void main() {
         world.settle(const Duration(minutes: 10));
         expect(
           world.server.log,
-          ['send move-1', 'list', 'list', 'list', 'page p1'],
+          ['send move-1', 'list', 'list', 'list'],
         );
         expect(world.cloud().queue.strategy.setAside.count, 1);
       });
@@ -639,6 +640,7 @@ void main() {
         world.server.overrideRead = null;
         world.settle(const Duration(minutes: 1));
         expect(world.viewedLife(), later);
+        world.show(pageId);
         world.commitMove(2);
         world.settle(const Duration(minutes: 1));
         expect(world.queueLength(), 0);
@@ -661,7 +663,7 @@ void main() {
         world.server.log.clear();
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
-        expect(world.server.log, ['send move-1', 'list', 'page p1']);
+        expect(world.server.log, ['send move-1', 'list']);
         expect(world.viewedLife(),
             truth.strategy.createdAt.millisecondsSinceEpoch);
         final generation = (world.cloud().queue.strategy.setAside as SetAside)
@@ -669,12 +671,12 @@ void main() {
             .single;
         expect(generation.writtenIn, ahead);
         expect(generation.entries.map((entry) => entry.id), ['move-1']);
+        world.show(pageId);
         world.commitMove(2);
         world.settle(const Duration(minutes: 1));
         expect(world.server.log, [
           'send move-1',
           'list',
-          'page p1',
           'send move-2',
           'page p1',
         ]);
@@ -1587,19 +1589,22 @@ void main() {
         [for (final call in world.server.readCalls.skip(before)) '$call'];
 
     test(
-        'adopting the strategy the editor opens reads its page list, then each '
-        'page, one read per step, as the strategy\'s account', () {
+        'adopting a strategy reads its page list and no page, as the '
+        'strategy\'s account; a page is read once it is shown', () {
       inWorld(
         (world) {
           world.sender.adopt(strategyId);
           world.settle();
+          expect(readsAfter(world, 0), ['list']);
+          expect(world.sender.adopting(strategyId), isFalse);
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
+          world.settle(const Duration(seconds: 12));
           expect(readsAfter(world, 0), ['list', 'page p1']);
           expect(
             world.server.readCalls.map((call) => call.account),
             everyElement(servedAccount),
           );
           expect(world.firstElement().publicId, isNotEmpty);
-          expect(world.sender.adopting(strategyId), isFalse);
         },
         addStrategy: false,
       );
@@ -1729,6 +1734,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondPage().page.publicId);
         },
         storage: storage,
         server: server,
@@ -1926,8 +1934,9 @@ void main() {
               world.lease.refuseNext = 1;
             }
           };
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
           world.sender.adopt(strategyId);
-          world.settle(const Duration(seconds: 10));
+          world.settle(const Duration(seconds: 20));
           expect(readsAfter(world, 0), ['list', 'page p1', 'page p1']);
           expect(
             world.readsRecorded(),
@@ -1949,6 +1958,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondPage().page.publicId);
         },
         storage: storage,
         server: server,
@@ -1984,6 +1996,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondPage().page.publicId);
         },
         storage: storage,
         server: server,
@@ -2107,8 +2122,9 @@ void main() {
           server.overrideRead = (call) => call.page != null
               ? const StoreReadLost(TransportFailure.network, 'cut')
               : null;
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
           world.sender.adopt(strategyId);
-          world.settle(const Duration(seconds: 1));
+          world.settle(const Duration(seconds: 11));
           expect(world.sender.adopting(strategyId), isTrue);
         },
         storage: storage,
@@ -2119,7 +2135,8 @@ void main() {
       inWorld(
         (world) {
           final before = server.readCalls.length;
-          world.settle();
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
+          world.settle(const Duration(seconds: 12));
           expect(readsAfter(world, before), ['page p1']);
           expect(world.firstElement().publicId, isNotEmpty);
           expect(world.sender.adopting(strategyId), isFalse);
@@ -2159,7 +2176,7 @@ void main() {
           }
           expect(readsAfter(world, 0), ['list']);
           world.settle(const Duration(seconds: 30));
-          expect(readsAfter(world, 0), ['list', 'list', 'page p1']);
+          expect(readsAfter(world, 0), ['list', 'list']);
           expect(world.sender.adopting(strategyId), isFalse);
         },
         addStrategy: false,
@@ -2198,8 +2215,9 @@ void main() {
               holdNextWrite(storage, () => world.connection = 2);
             }
           };
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
           world.sender.adopt(strategyId);
-          world.settle();
+          world.settle(const Duration(seconds: 12));
           expect(readsAfter(world, 0), ['list', 'page p1']);
           expect(world.readsRecorded(), ['the page list']);
           expect(world.firstElement().publicId, isNotEmpty);
@@ -2332,11 +2350,12 @@ void main() {
           world.commitMove(1);
         },
       ),
-      'a page not read since the strategy was taken up': (
+      'a page shown that the store does not hold': (
         read: 'page $pageId',
         start: (world) {
           world.server.overrideRead =
               (call) => call.page == pageId ? earlierPage(world, pageId) : null;
+          world.sender.liveOpened(strategyId, const ReadOfPage(pageId));
           world.sender.adopt(strategyId);
         },
       ),
@@ -2368,9 +2387,7 @@ void main() {
             );
             expect(times, hasLength(9), reason: reason);
           },
-          addStrategy: reason !=
-              'a page not read since the strategy was '
-                  'taken up',
+          addStrategy: reason != 'a page shown that the store does not hold',
         );
       });
     }
@@ -2378,9 +2395,7 @@ void main() {
 
   test(
       'after a replacement the strategy is read as on first take-up: the page '
-      'list, then every page in the list\'s order', () {
-    final storage = MemoryStorage();
-    final server = FakeServer();
+      'list alone, then each page once it is shown', () {
     List<String> pagesAfter(World world, int from) => [
           for (final call in world.server.readCalls.skip(from))
             if (call.page case final page?) page,
@@ -2391,9 +2406,9 @@ void main() {
         final before = world.server.readCalls.length;
         world.sender.adopt(strategyId);
         world.settle(const Duration(minutes: 1));
-        final takeUp = pagesAfter(world, before);
-        expect(takeUp, ['p1', 'p2', 'p3']);
+        expect(pagesAfter(world, before), isEmpty);
         expect(world.server.readCalls[before].page, isNull);
+        world.show(pageId);
         world.server.log.clear();
         final replaced = world.server.readCalls.length;
         world.server.answerNext(strategyId, (call) {
@@ -2405,17 +2420,13 @@ void main() {
         });
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
-        expect(world.server.log, [
-          'send move-1',
-          'list',
-          'page p1',
-          'page p2',
-          'page p3',
-        ]);
-        expect(pagesAfter(world, replaced), takeUp);
+        expect(world.server.log, ['send move-1', 'list']);
+        for (final page in ['p3', 'p1']) {
+          world.sender.liveOpened(strategyId, ReadOfPage(page));
+        }
+        world.settle(const Duration(minutes: 1));
+        expect(pagesAfter(world, replaced), unorderedEquals(['p3', 'p1']));
       },
-      storage: storage,
-      server: server,
       addStrategy: false,
     );
   });
@@ -2514,6 +2525,9 @@ void main() {
             world.secondPageOnServer();
             world.sender.adopt(strategyId);
             world.settle();
+            world
+              ..show(pageId)
+              ..show(secondId());
           },
           storage: storage,
           server: server,
@@ -2699,6 +2713,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondId());
           world.signIn(null);
           world.settle();
           final first = world.firstElement();
@@ -2762,6 +2779,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondId());
           world.signIn(null);
           world.settle();
           world.commitMove(1);
@@ -2818,8 +2838,8 @@ void main() {
 
     test(
         'a discard made through the sender\'s own store leaves the page list '
-        'owed, so a sender with no other reason to look reads the list and '
-        'every page', () {
+        'owed, so a sender with no other reason to look reads the list, and '
+        'every page once it is shown', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -2842,6 +2862,11 @@ void main() {
               .then((result) => discarded = result);
           world.settle(const Duration(hours: 1));
           expect(discarded, isA<Saved<StrategySummary, CommitRefusal>>());
+          expect(readsAfter(world, before), ['list']);
+          for (final page in server.rows[strategyId]!.pages) {
+            world.sender.liveOpened(strategyId, ReadOfPage(page.publicId));
+          }
+          world.settle(const Duration(minutes: 1));
           final reads = readsAfter(world, before);
           expect(reads, contains('list'));
           expect(
@@ -3012,7 +3037,7 @@ void main() {
 
     test(
         'after an unreadable queue is discarded, the sender reads the page '
-        'list and every page again, and the pages come back', () {
+        'list again, and each page comes back once it is shown', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -3038,6 +3063,11 @@ void main() {
           final pages = [
             for (final page in server.rows[strategyId]!.pages) page.publicId,
           ];
+          expect(readsAfter(world, before), ['list']);
+          for (final page in pages) {
+            world.sender.liveOpened(strategyId, ReadOfPage(page));
+          }
+          world.settle(const Duration(minutes: 1));
           final reads = readsAfter(world, before);
           expect(reads, contains('list'));
           expect(reads, containsAll([for (final page in pages) 'page $page']));
@@ -3286,6 +3316,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondPage().page.publicId);
         },
         storage: storage,
         server: server,
@@ -3686,6 +3719,9 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
+          world
+            ..show(pageId)
+            ..show(secondPage().page.publicId);
         },
         storage: storage,
         server: server,

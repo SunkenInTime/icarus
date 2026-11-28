@@ -472,9 +472,8 @@ void main() {
   testWidgets(
       'when an open is replaced while its loading view shows, the view shows '
       'the strategy now being opened at once', (tester) async {
-    late Directory folder;
     await tester.runAsync(() async {
-      folder = await openUnitHive();
+      await openUnitHive();
       final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
       for (final (id, map) in [
         ('look-a', MapValue.bind),
@@ -487,10 +486,7 @@ void main() {
         );
       }
     });
-    addTearDown(() => tester.runAsync(() async {
-          await Hive.close();
-          await folder.delete(recursive: true);
-        }));
+    addTearDown(() => tester.runAsync(closeUnitHive));
     final container = await _editor(tester);
     String? shownName() => tester
         .widget<StrategyViewSkeleton>(find.byType(StrategyViewSkeleton))
