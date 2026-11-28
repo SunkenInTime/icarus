@@ -90,5 +90,11 @@
     "close-with-unsaved-local",
     "close-with-video-open",
     "close-after-video-dismissed"
-  ]
+  ],
+  "slow": {
+    "open-time-dense-local": {
+      "seconds": 2700,
+      "because": "it opens a 3,000-item page twelve times. The Linux build draws in software, so on t3os a whole run took 612 s on the store and 778 s on Hive, close to the 900 s default. Its timings are judged on the PC, not here."
+    }
+  }
 }
