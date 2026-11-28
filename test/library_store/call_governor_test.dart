@@ -106,6 +106,9 @@ void stallPageTwo(World world) {
   world.pagesOnServer(['p2']);
   world.sender.adopt(strategyId);
   world.settle(const Duration(minutes: 1));
+  world
+    ..show(pageId)
+    ..show('p2');
   world.server.overrideRead = (call) => call.page == 'p2'
       ? const StoreReadAnswered(PageGone('nowhere'), point: stampedWhenAnswered)
       : null;
@@ -311,7 +314,7 @@ void main() {
         world.settle(const Duration(minutes: 1));
         expect(readTimes(world, null), hasLength(2));
         expect(world.cloud().queue.shown.pages.keys, contains('p2'));
-        expect(readTimes(world, 'p2'), hasLength(1));
+        expect(readTimes(world, 'p2'), isEmpty);
         expect(world.face(), isNull);
       },
       addStrategy: false,
