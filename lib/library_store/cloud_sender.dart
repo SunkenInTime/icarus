@@ -301,9 +301,10 @@ sealed class _Adoption {
 }
 
 final class _TakeLive extends _Adoption {
-  const _TakeLive(this.result);
+  const _TakeLive(this.result, this.outcome);
 
   final _LiveResult result;
+  final StoreReadAnswered outcome;
 }
 
 final class _WaitForLive extends _Adoption {
@@ -1051,16 +1052,11 @@ final class CloudSender implements LiveResults {
         outcome = held;
         started = at;
       case null:
-        switch (_adoptionFromLive(id, account, now, snap)) {
-          case _TakeLive(:final result):
-            switch (await _outcomeOf(id, read, result.answer)) {
-              case final StoreReadAnswered answered:
-                outcome = answered;
-                started = result.at;
-                fromLive = result;
-              case _:
-                _note(id, 'the live page list cannot adopt it; it is read');
-            }
+        switch (await _adoptionFromLive(id, account, now)) {
+          case _TakeLive(:final result, outcome: final answered):
+            outcome = answered;
+            started = result.at;
+            fromLive = result;
           case _WaitForLive(:final until):
             return _Skipped(StallExit.liveNoFirstResult, until);
           case _ReadToAdopt():
@@ -1149,36 +1145,41 @@ final class CloudSender implements LiveResults {
     }
   }
 
-  _Adoption _adoptionFromLive(
+  Future<_Adoption> _adoptionFromLive(
     String id,
     Account account,
     DateTime now,
-    Snapshot snap,
-  ) {
+  ) async {
     const read = ReadOfList();
-    final live = _live[(id, read)];
-    switch (live?.pending) {
-      case final pending? when pending.account == account:
-        return _TakeLive(pending);
-      case _?:
-        _note(id, 'a live page list was read as another account');
-        _owe(id, read);
-        return const _ReadToAdopt();
-      case null:
-        break;
+    if (_live[(id, read)] case _Live(:final pending?) && final live) {
+      if (await _takesUp(id, account, pending) case final answered?) {
+        return _TakeLive(pending, answered);
+      }
+      live.written(pending);
+      _forgetEnded(id, read);
+      _note(id, 'the live page list cannot take it up; it is read');
+      return const _ReadToAdopt();
     }
-    switch (_liveGate(id, read, now, snap)) {
-      case _LiveAwaitingFirst(:final until):
-        return _WaitForLive(until);
-      case _LiveCurrent() || _NotLive():
-        break;
-    }
-    final askedAt = _wanted[id]?.at;
-    if (live == null && askedAt != null && _editorShows() == id) {
-      final until = askedAt.add(_timing.firstLiveResult);
-      if (until.isAfter(now)) return _WaitForLive(until);
+    final until = _wanted[id]?.at.add(_timing.firstLiveResult);
+    if (until != null && until.isAfter(now) && _editorShows() == id) {
+      return _WaitForLive(until);
     }
     return const _ReadToAdopt();
+  }
+
+  Future<StoreReadAnswered?> _takesUp(
+    String id,
+    Account account,
+    _LiveResult pending,
+  ) async {
+    if (pending.account != account) return null;
+    final outcome = await _outcomeOf(id, const ReadOfList(), pending.answer);
+    if (outcome case final StoreReadAnswered answered
+        when answered.base is HeaderRead &&
+            await _onCurrentConnection(answered.point)) {
+      return answered;
+    }
+    return null;
   }
 
   Future<_Step?> _endedTakeUp(

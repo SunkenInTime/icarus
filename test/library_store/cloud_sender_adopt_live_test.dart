@@ -42,6 +42,7 @@ void main() {
     test('asked while the watch waits for its first answer: waits, then takes',
         () {
       inWorld((world) {
+        world.openInEditor(strategyId);
         world.sender.liveOpened(strategyId, _list);
         world.sender.adopt(strategyId);
         world.settle(const Duration(seconds: 3));
@@ -71,6 +72,7 @@ void main() {
     test('a watch that never answers: one read after the first-result wait',
         () {
       inWorld((world) {
+        world.openInEditor(strategyId);
         world.sender.liveOpened(strategyId, _list);
         world.sender.adopt(strategyId);
         world.settle(const Duration(seconds: 9));
@@ -249,6 +251,146 @@ void main() {
         expect(_adopted(world), isTrue);
         expect(world.sender.liveTaken, 0);
       }, addStrategy: false);
+    });
+
+    void notTakenThenReadOnce(
+      World world,
+      StoreReadOutcome Function() answer, {
+      bool reconnectFirst = false,
+    }) {
+      world.openInEditor(strategyId);
+      world.sender.liveOpened(strategyId, _list);
+      world.sender.liveArrived(strategyId, _list, servedAccount, answer());
+      if (reconnectFirst) world.connection = 2;
+      world.settle();
+      world.sender.adopt(strategyId);
+      world.settle();
+      expect(_listReads(world), 1);
+      expect(_adopted(world), isTrue);
+      expect(world.sender.bound[strategyId]?.connection, world.connection);
+      world.settle(const Duration(minutes: 1));
+      expect(_listReads(world), 1);
+      expect(world.sender.liveTaken, 0);
+      expect(_adopted(world), isTrue);
+      expect(world.face(), isNull);
+    }
+
+    test('a live list saying the strategy is gone is not taken: read, once',
+        () {
+      inWorld(
+        (world) => notTakenThenReadOnce(
+          world,
+          () => StoreReadAnswered(
+            const StrategyGone(),
+            point: world.server.stamp(),
+          ),
+        ),
+        addStrategy: false,
+      );
+    });
+
+    test('an unreadable live list is not taken: read, once', () {
+      inWorld(
+        (world) => notTakenThenReadOnce(
+          world,
+          () => StoreReadUnreadable(
+            'a shape this build cannot read',
+            point: world.server.stamp(),
+          ),
+        ),
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a live list from before a reconnect, picked after it, is not taken: '
+        'read, once, on the connection that is current', () {
+      inWorld(
+        (world) => notTakenThenReadOnce(
+          world,
+          () => liveList(world),
+          reconnectFirst: true,
+        ),
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a live gone from a connection that has ended is not taken: read, '
+        'once, on the connection that is current', () {
+      inWorld(
+        (world) => notTakenThenReadOnce(
+          world,
+          () => StoreReadAnswered(
+            const StrategyGone(),
+            point: world.server.stamp(),
+          ),
+          reconnectFirst: true,
+        ),
+        addStrategy: false,
+      );
+    });
+
+    group('one clock per take-up, from the first ask:', () {
+      void readAtTheBound(World world) {
+        world.settle(const Duration(seconds: 3));
+        expect(_listReads(world), 0);
+        world.settle(const Duration(seconds: 2));
+        expect(_listReads(world), 1);
+        expect(_adopted(world), isTrue);
+        world.settle(const Duration(minutes: 1));
+        expect(_listReads(world), 1);
+      }
+
+      test('a watch opening later does not restart it', () {
+        inWorld((world) {
+          world.openInEditor(strategyId);
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 6));
+          world.sender.liveOpened(strategyId, _list);
+          readAtTheBound(world);
+        }, addStrategy: false);
+      });
+
+      test('a connection change does not restart it', () {
+        inWorld((world) {
+          world.openInEditor(strategyId);
+          world.sender.liveOpened(strategyId, _list);
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 6));
+          world.connection = 2;
+          readAtTheBound(world);
+        }, addStrategy: false);
+      });
+
+      test('a reopen does not restart it', () {
+        inWorld((world) {
+          world.openInEditor(strategyId);
+          world.sender.liveOpened(strategyId, _list);
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 6));
+          world.sender.liveClosed(strategyId, _list);
+          world.openInEditor(null);
+          world.openInEditor(strategyId);
+          world.sender.adopt(strategyId);
+          world.sender.liveOpened(strategyId, _list);
+          readAtTheBound(world);
+        }, addStrategy: false);
+      });
+
+      test('a watch left behind by a closed editor does not keep it alive', () {
+        inWorld((world) {
+          world.openInEditor(strategyId);
+          world.sender.liveOpened(strategyId, _list);
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 3));
+          expect(_listReads(world), 0);
+          world.openInEditor(null);
+          world.settle(const Duration(milliseconds: 500));
+          expect(_listReads(world), 1);
+          expect(_adopted(world), isTrue);
+        }, addStrategy: false);
+      });
     });
 
     test('the editor closes while adoption waits on its watch: one read', () {

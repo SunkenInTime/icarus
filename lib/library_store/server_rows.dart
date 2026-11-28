@@ -87,7 +87,6 @@ Future<List<String>> differencesFromServer(
   ServerRows expected, {
   required Account? account,
   required Set<String>? pages,
-  void Function(String pageId)? neverHeld,
 }) async {
   final Reading<StrategyContent> read = await other.readStrategy(strategyId);
   final StrategyContent content;
@@ -138,13 +137,7 @@ Future<List<String>> differencesFromServer(
     for (final name in content.foreignNames)
       'a name this build does not know: ${name.area}/${name.name}',
     for (final pageId in compared)
-      ...await _pageDifferences(
-        other,
-        strategyId,
-        pageId,
-        expected,
-        neverHeld: neverHeld,
-      ),
+      ...await _pageDifferences(other, strategyId, pageId, expected),
   ];
 }
 
@@ -152,15 +145,10 @@ Future<List<String>> _pageDifferences(
   LibraryStore other,
   String strategyId,
   String pageId,
-  ServerRows expected, {
-  void Function(String pageId)? neverHeld,
-}) async {
+  ServerRows expected,
+) async {
   final sentPage = expected.pages[pageId];
   switch (await other.readPage(strategyId, pageId)) {
-    case Found(value: PageContent(content: ContentNotRead()))
-        when neverHeld != null:
-      neverHeld(pageId);
-      return const [];
     case Found(value: final shown):
       if (sentPage == null) {
         return ['page $pageId: the store holds it, the server dropped it'];

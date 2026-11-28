@@ -107,8 +107,6 @@ ProviderContainer _editor(World world, _CountingServer server) {
 
 typedef _Counted = ({List<String> editor, List<String> sender});
 
-int _total(_Counted counted) => counted.editor.length + counted.sender.length;
-
 _Counted _during(World world, _CountingServer server, void Function() act) {
   final editorBefore = server.calls.length;
   final senderBefore =
@@ -127,8 +125,10 @@ _Counted _during(World world, _CountingServer server, void Function() act) {
 void main() {
   test(
       'the editor in send mode on today\'s path, as the transport sees it: a '
-      'first open is the page list and the shown page watched, a later open '
-      'the same two, a page switch one watch, and an edit one send', () {
+      'first open reads and watches the page list and the shown page, and '
+      'the store reads nothing; a later open the same four; a page read and '
+      'watched one read and one watch; an edit one send; and every watch '
+      'closed once the editor is gone', () {
     inWorld(
       (world) {
         world.secondPageOnServer();
@@ -161,33 +161,45 @@ void main() {
               remote.openStrategy(strategyId, activePagePublicId: pageId));
         });
 
+        final watchesAfterOpens = server.openWatches;
         final subscriptions = container.read(editorSubscriptionsProvider);
+        StreamSubscription<Object>? p2Watch;
         final switched = _during(world, server, () {
           unawaited(subscriptions
               .readPage(strategyPublicId: strategyId, pagePublicId: 'p2')
-              .then((_) => subscriptions
+              .then((_) => p2Watch = subscriptions
                   .page(strategyPublicId: strategyId, pagePublicId: 'p2')
                   .listen((_) {})));
         });
+        final watchesAfterSwitch = server.openWatches;
 
         final edit = _during(world, server, () => world.commitMove(1));
 
         printOnFailure('first open: $first\nlater open: $later\n'
             'page switch: $switched\none edit: $edit');
-        expect(first.editor, [
+        const open = [
+          'query strategy:getPageList',
+          'query page:getSnapshot',
           'subscribeStamped strategy:getPageList',
           'subscribeStamped page:getSnapshot',
-        ]);
+        ];
+        expect(first.editor, open);
         expect(first.sender, isEmpty);
-        expect(_total(later), 2);
+        expect(later.editor, open);
         expect(later.sender, isEmpty);
-        expect(switched.editor, ['subscribeStamped page:getSnapshot']);
+        expect(switched.editor, [
+          'query page:getSnapshot',
+          'subscribeStamped page:getSnapshot',
+        ]);
         expect(switched.sender, isEmpty);
         expect(edit.editor, isEmpty);
         expect(edit.sender, ['send move-1']);
+        expect((watchesAfterOpens, watchesAfterSwitch), (2, 3));
 
+        unawaited(p2Watch?.cancel());
         container.dispose();
         world.settle();
+        expect(server.openWatches, 0);
       },
       addStrategy: false,
     );

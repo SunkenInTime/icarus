@@ -161,6 +161,8 @@ base class LivePageServer implements StampedConvexTransport {
 
   Stamped<ConvexValue> answerOf(String subject) => _answer(subject);
 
+  int get openWatches => _watching.length + _plain.length;
+
   void publish(String page) {
     for (final (watched, controller) in _watching) {
       if (watched == page) controller.add(_answer(page));

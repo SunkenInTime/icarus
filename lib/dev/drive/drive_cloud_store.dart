@@ -1353,6 +1353,7 @@ Future<StoreVerdict> _againstServer(
   final rows = ServerRows();
   final unjudged = <String>[];
   final RemotePageList list;
+  final List<String> neverHeld;
   try {
     list = await server.pageList(strategyId);
     switch (pageListRead(list)) {
@@ -1367,8 +1368,16 @@ Future<StoreVerdict> _againstServer(
           differences: null,
         );
     }
-    for (final page in list.pages) {
-      final pageId = page.page.publicId;
+    final listed = [for (final page in list.pages) page.page.publicId];
+    neverHeld = await _pagesNeverHeld(store, strategyId, listed);
+    if (neverHeld.isNotEmpty && await _heldInTheQueue(store, strategyId)) {
+      return NotCompared(
+        'held in the queue, and the store gives no content for '
+        '${neverHeld.join(', ')}',
+      );
+    }
+    for (final pageId in listed) {
+      if (neverHeld.contains(pageId)) continue;
       switch (pageRead(await server.page(strategyId, pageId), appCanRead)) {
         case RowsRead(:final value):
           rows.page(value);
@@ -1380,22 +1389,37 @@ Future<StoreVerdict> _againstServer(
   } catch (error) {
     return NotCompared('could not read the server\'s copy: $error');
   }
-  final neverHeld = <String>[];
-  final differences = await differencesFromServer(
-    store,
-    strategyId,
-    rows,
-    account: signedIn,
-    pages: null,
-    neverHeld: neverHeld.add,
-  );
   return Compared(
     pages: list.pages.length,
     unjudged: unjudged,
-    differences: differences,
+    differences: await differencesFromServer(
+      store,
+      strategyId,
+      rows,
+      account: signedIn,
+      pages: null,
+    ),
     neverHeld: neverHeld,
   );
 }
+
+Future<List<String>> _pagesNeverHeld(
+  LibraryStore store,
+  String strategyId,
+  List<String> pageIds,
+) async =>
+    [
+      for (final pageId in pageIds)
+        if (await store.readPage(strategyId, pageId)
+            case Found(value: PageContent(content: ContentNotRead())))
+          pageId,
+    ];
+
+Future<bool> _heldInTheQueue(LibraryStore store, String strategyId) async =>
+    switch (await store.readStrategy(strategyId)) {
+      Found(value: StrategyContent(sync: CloudHeld())) => true,
+      _ => false,
+    };
 
 sealed class StoreVerdict {
   const StoreVerdict();
@@ -1487,7 +1511,7 @@ List<CloudStoreLine> comparisonLines({
             if (neverHeld.isNotEmpty)
               CloudStoreLine(
                 'CLOUDSTORE compared $when: $strategyId ${neverHeld.length} '
-                'pages never shown or needed, not compared: '
+                'pages the store never held, not compared: '
                 '${neverHeld.join(', ')}',
                 problem: false,
               ),
@@ -1503,8 +1527,13 @@ List<CloudStoreLine> comparisonLines({
               ),
             if (differences != null && differences.isEmpty)
               CloudStoreLine(
-                'CLOUDSTORE compared $when: $strategyId equal to the server\'s '
-                'copy read as $readAs, $pages pages',
+                neverHeld.isEmpty
+                    ? 'CLOUDSTORE compared $when: $strategyId equal to the '
+                        'server\'s copy read as $readAs, $pages pages'
+                    : 'CLOUDSTORE compared $when: $strategyId the '
+                        '${pages - neverHeld.length} pages compared equal to '
+                        'the server\'s copy read as $readAs, '
+                        '${neverHeld.length} of $pages pages not compared',
                 problem: false,
               ),
             for (final difference in differences ?? const <String>[])
