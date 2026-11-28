@@ -2753,7 +2753,11 @@ Future<void> _run(Map<String, dynamic> step) async {
       (await storeQueueRecords(c)).forEach(_log);
     case 'waitStoreHeld':
       _log(
-        await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
+        await waitStoreHeld(
+          c,
+          Duration(seconds: (value as num).toInt()),
+          bySender: step['answer'] == 'sender',
+        ),
       );
     case 'waitStoreReading':
       _log(

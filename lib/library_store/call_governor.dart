@@ -22,12 +22,17 @@ typedef ReadsUnder = ({Account? account, int? connection, int signOuts});
 
 typedef Rung = ({int count, DateTime at, StallExit why});
 
-typedef AccessRung = ({
+typedef AccessChecks = ({Account account, int signIns, int count});
+
+enum WordFrom { accessCheck, otherRead, liveResult }
+
+typedef ReadWord = ({
   Account account,
   int signIns,
-  int count,
+  int? connection,
   DateTime at,
   CannotRead? cannot,
+  WordFrom from,
 });
 
 typedef ReadMemory = ({
@@ -166,7 +171,8 @@ final class CallGovernor {
 
   final _issuedAt = <(String, ReadOf), DateTime>{};
   final _memory = <String, ReadMemory>{};
-  final _access = <String, AccessRung>{};
+  final _checks = <String, AccessChecks>{};
+  final _words = <String, ReadWord>{};
   final _held = <(String, ReadOf), HeldResult>{};
   final _fresh = <(String, ReadOf)>{};
   final _kept = <(String, Object), QueueEvent>{};
@@ -206,35 +212,68 @@ final class CallGovernor {
     _issuedAt.removeWhere((_, at) => !at.add(_timing.readFloor).isAfter(now));
   }
 
-  AccessRung? access(String id, Snapshot snap) => switch (_access[id]) {
-        final rung?
-            when rung.account == snap.account && rung.signIns == snap.signIns =>
-          rung,
+  AccessChecks? checks(String id, Snapshot snap) => switch (_checks[id]) {
+        final checks?
+            when checks.account == snap.account &&
+                checks.signIns == snap.signIns =>
+          checks,
         _ => null,
       };
 
-  bool accessStopped(String id, Snapshot snap) => switch (access(id, snap)) {
-        (:final count, at: _, cannot: _, account: _, signIns: _) =>
-          _editorShows() != id && _timing.accessAfter(count) == null,
+  ReadWord? word(String id, Snapshot snap) => switch (_words[id]) {
+        final word?
+            when word.account == snap.account && word.signIns == snap.signIns =>
+          word,
+        _ => null,
+      };
+
+  bool accessStopped(String id, Snapshot snap) => switch (checks(id, snap)) {
+        final checks? =>
+          _editorShows() != id && _timing.accessAfter(checks.count) == null,
         null => false,
       };
 
-  void climbAccess(String id, Snapshot snap, CannotRead? cannot) {
-    final kept = access(id, snap);
-    _access[id] = (
+  void senderChecked(String id, Snapshot snap, CannotRead? cannot) {
+    _checks[id] = (
       account: snap.account!,
       signIns: snap.signIns,
-      count: (kept?.count ?? 0) + 1,
-      at: _clock(),
-      cannot: cannot,
+      count: (checks(id, snap)?.count ?? 0) + 1,
     );
+    _say(id, snap, cannot, WordFrom.accessCheck);
   }
 
-  void accessConfirmed(String id) => _access.remove(id);
+  void accessConfirmed(String id) {
+    _checks.remove(id);
+    _words.remove(id);
+  }
+
+  void readable(String id, Snapshot snap, WordFrom from) {
+    if (word(id, snap) case final said? when said.cannot == null) return;
+    _say(id, snap, null, from);
+  }
+
+  void unreadable(String id, Snapshot snap, CannotRead cannot) {
+    if (word(id, snap) case final said? when said.cannot != null) return;
+    _say(id, snap, cannot, WordFrom.liveResult);
+  }
+
+  void readAnswered(String id, Snapshot snap) {
+    if (word(id, snap)?.cannot != null) _words.remove(id);
+  }
+
+  void _say(String id, Snapshot snap, CannotRead? cannot, WordFrom from) =>
+      _words[id] = (
+        account: snap.account!,
+        signIns: snap.signIns,
+        connection: snap.connection,
+        at: _clock(),
+        cannot: cannot,
+        from: from,
+      );
 
   void newEvidence(String id, [Set<ReadOf>? about]) {
     if (about == null || about.contains(const ReadOfList())) {
-      _access.remove(id);
+      accessConfirmed(id);
     }
     if (_memory[id] case final kept? when kept.settle.isNotEmpty) {
       _memory[id] = kept.keeping(
@@ -247,7 +286,7 @@ final class CallGovernor {
   void userOpened(String? id) {
     if (id == _opened) return;
     _opened = id;
-    if (id != null) _access.remove(id);
+    if (id != null) accessConfirmed(id);
   }
 
   Set<ReadOf> owedFresh(String id) => {
@@ -268,9 +307,9 @@ final class CallGovernor {
   void keptWritten(String id, Object subject) => _kept.remove((id, subject));
 
   ReadWhen readAt(String id, ReadOf read, Snapshot snap) {
-    final access = this.access(id, snap);
+    final word = this.word(id, snap);
     final accessRow =
-        access?.cannot == null ? StallExit.viewerOnly : StallExit.forbidden;
+        word?.cannot == null ? StallExit.viewerOnly : StallExit.forbidden;
     if (accessStopped(id, snap)) return ReadStopped(accessRow);
     DateTime? at;
     StallExit? why;
@@ -288,12 +327,10 @@ final class CallGovernor {
         case (:final count, :final at, :final why)) {
       notBefore(at.add(_timing.settleAfter(count)), why);
     }
-    if (access
-        case (:final count, :final at, cannot: _, account: _, signIns: _)) {
-      notBefore(
-        at.add(_timing.accessAfter(count) ?? _timing.readAgainAfter),
-        accessRow,
-      );
+    if (word case final said?
+        when said.from == WordFrom.accessCheck &&
+            said.connection == snap.connection) {
+      notBefore(said.at.add(_timing.readAgainAfter), accessRow);
     }
     return ReadFrom(at, why);
   }

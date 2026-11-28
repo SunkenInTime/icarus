@@ -225,6 +225,8 @@ enum _Why {
 
 typedef _Planned = ({ReadOf read, _Why why});
 
+enum _Take { taken, alreadyHeld, olderThanTaken, owed, troubled }
+
 sealed class _Answer {
   const _Answer();
 }
@@ -448,10 +450,12 @@ final class CloudSender implements LiveResults {
       };
 
   CannotRead? cannotRead(String strategyId) =>
-      _governor.access(strategyId, _inputs)?.cannot;
+      _governor.word(strategyId, _inputs)?.cannot;
 
-  AccessRung? accessRung(String strategyId) =>
-      _governor.access(strategyId, _inputs);
+  AccessChecks? accessChecks(String strategyId) =>
+      _governor.checks(strategyId, _inputs);
+
+  ReadWord? readWord(String strategyId) => _governor.word(strategyId, _inputs);
 
   bool accessCheckStopped(String strategyId) =>
       _governor.accessStopped(strategyId, _inputs);
@@ -1313,7 +1317,7 @@ final class CloudSender implements LiveResults {
   StallExit _restingOn(String id, CloudStrategy cloud, StallExit? reading) =>
       switch (standingOf(cloud.queue)) {
         Standing.deletedOnServer => StallExit.deletedOnServer,
-        Standing.editAccessLost => _governor.access(id, _inputs)?.cannot == null
+        Standing.editAccessLost => _governor.word(id, _inputs)?.cannot == null
             ? StallExit.viewerOnly
             : StallExit.forbidden,
         Standing.upgradeRequired => StallExit.upgrade,
@@ -1504,7 +1508,7 @@ final class CloudSender implements LiveResults {
             _owedPastTheWatch.remove((id, read));
         }
     }
-    return _answered(
+    final (step, _) = await _answered(
       id,
       owner,
       snap,
@@ -1521,6 +1525,7 @@ final class CloudSender implements LiveResults {
         readIn: session,
       )),
     );
+    return step;
   }
 
   Future<_Step> _takeLive(
@@ -1532,10 +1537,8 @@ final class CloudSender implements LiveResults {
     ReadOf read,
     _LiveResult result,
   ) async {
-    var handled = false;
-    var superseded = false;
     _live[(id, read)]?.taking = result;
-    final step = await _answered(
+    final (step, take) = await _answered(
       id,
       owner,
       snap,
@@ -1546,27 +1549,50 @@ final class CloudSender implements LiveResults {
       result.at,
       late: false,
       troubled: () {},
-      handled: () => handled = true,
-      superseded: () => superseded = true,
     );
     if (_live[(id, read)] case final live?
         when identical(live.taking, result)) {
       live.taking = null;
     }
     if (step is _Ended) return step;
-    final troubled = step is _Skipped && step.why == StallExit.localTrouble;
-    if (handled) {
-      _live[(id, read)]?.written(result);
-      _forgetEnded(id, read);
-      if (step is _Acted && !superseded) liveTaken++;
-      if (step is! _Acted) _live[(id, read)]?.deliveredOn = null;
-    } else if (!troubled) {
-      _owe(id, read);
+    switch (take) {
+      case _Take.taken || _Take.alreadyHeld || _Take.olderThanTaken:
+        _live[(id, read)]?.written(result);
+        _forgetEnded(id, read);
+        if (step is _Acted && take != _Take.olderThanTaken) liveTaken++;
+        if (step is! _Acted) _live[(id, read)]?.deliveredOn = null;
+      case _Take.owed:
+        _owe(id, read);
+      case _Take.troubled:
+        break;
     }
     return step;
   }
 
-  Future<_Step> _answered(
+  static _Take? _verdictOf(List<NotApplied> notApplied, _Why why) {
+    bool all(bool Function(Inapplicable why) test) =>
+        notApplied.isNotEmpty &&
+        notApplied.every((declined) => switch (declined) {
+              QueueDeclined(:final why) => test(why),
+              EditGoesThroughCommit() => false,
+            });
+    return switch (notApplied) {
+      [] => _Take.taken,
+      _ when all((why) => why is SameResult) => _Take.alreadyHeld,
+      _ when why == _Why.live && all((why) => why is OlderResult) =>
+        _Take.olderThanTaken,
+      _ => null,
+    };
+  }
+
+  static (_Step, _Take) _owedUnlessTroubled(_Step step) => (
+        step,
+        step is _Skipped && step.why == StallExit.localTrouble
+            ? _Take.troubled
+            : _Take.owed,
+      );
+
+  Future<(_Step, _Take)> _answered(
     String id,
     Account owner,
     Snapshot snap,
@@ -1577,34 +1603,32 @@ final class CloudSender implements LiveResults {
     DateTime started, {
     required bool late,
     required void Function() troubled,
-    void Function()? handled,
-    void Function()? superseded,
   }) async {
     final (:read, :why) = planned;
     final marking = switch (why) {
       _Why.need || _Why.clock || _Why.adopt || _Why.live => cloud,
       _Why.access || _Why.retire => null,
     };
-    if (disposed) return const _Ended();
+    if (disposed) return (const _Ended(), _Take.owed);
     if (_inputs != snap) {
       _note(
           id,
           'read $read (${why.words}); it came back after the inputs '
           'changed, so it is dropped and read again');
-      return const _Restart();
+      return (const _Restart(), _Take.owed);
     }
     switch (outcome) {
       case StoreReadAnswered(:final base, :final point, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
         final asked = (session: session, point: point);
         final now = await _currentGeneration();
-        if (disposed) return const _Ended();
+        if (disposed) return (const _Ended(), _Take.owed);
         if (now == null) {
           _note(
               id,
               'read $read came back while the client could not say which '
               'connection it is on, so it is read again');
-          return const _Restart();
+          return (const _Restart(), _Take.owed);
         }
         final written = await _store.write(owner, id, onConnection: now, [
           BaseArrived(base, session: session, point: point),
@@ -1615,51 +1639,47 @@ final class CloudSender implements LiveResults {
               point: point,
             ),
         ]);
-        if (disposed) return const _Ended();
-        final olderThanTaken = why == _Why.live &&
-            written is WrittenWith &&
-            written.notApplied.isNotEmpty &&
-            written.notApplied.every((declined) => switch (declined) {
-                  QueueDeclined(why: OlderResult()) => true,
-                  QueueDeclined() || EditGoesThroughCommit() => false,
-                });
-        if (written case WrittenWith(:final notApplied)
-            when notApplied.isEmpty || olderThanTaken) {
-          handled?.call();
-        }
+        if (disposed) return (const _Ended(), _Take.owed);
+        final verdict = switch (written) {
+          WrittenWith(:final notApplied) => _verdictOf(notApplied, why),
+          WriteTroubled() => null,
+        };
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: late);
             _governor.keep(id, read, _refusedMark(read, why, asked));
-            return _unsettled(
-              id,
-              owner,
-              read,
-              snap,
-              'the store would not keep $read: $why',
-              row: StallExit.unreadableRead,
-              planned: cloud,
+            return _owedUnlessTroubled(
+              await _unsettled(
+                id,
+                owner,
+                read,
+                snap,
+                'the store would not keep $read: $why',
+                row: StallExit.unreadableRead,
+                planned: cloud,
+              ),
             );
           case WriteTroubled(:final trouble):
             troubled();
-            return _troubled(id, trouble);
-          case WrittenWith() when olderThanTaken:
+            return (_troubled(id, trouble), _Take.troubled);
+          case WrittenWith() when verdict == _Take.olderThanTaken:
             _governor.written(id, read, late: late);
-            superseded?.call();
             _note(id, 'a live $read older than one already taken owes nothing');
-            return const _Acted();
-          case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
+            return (const _Acted(), _Take.olderThanTaken);
+          case WrittenWith(:final notApplied) when verdict == null:
             _governor.written(id, read, late: late);
-            return _unsettled(
-              id,
-              owner,
-              read,
-              snap,
-              'the queue did not take $read: ${notApplied.join('; ')}',
-              row: StallExit.refusedResult,
-              marking: marking,
-              asked: asked,
-              planned: cloud,
+            return _owedUnlessTroubled(
+              await _unsettled(
+                id,
+                owner,
+                read,
+                snap,
+                'the queue did not take $read: ${notApplied.join('; ')}',
+                row: StallExit.refusedResult,
+                marking: marking,
+                asked: asked,
+                planned: cloud,
+              ),
             );
           case WrittenWith(:final effects):
             _governor.written(id, read, late: late);
@@ -1668,44 +1688,56 @@ final class CloudSender implements LiveResults {
                   (effect) =>
                       effect is PageResultDeferred && effect.page == page,
                 )) {
-              return _unsettled(
-                id,
-                owner,
-                read,
-                snap,
-                'the page list and page $page keep disagreeing about which '
-                'life the page is in',
-                row: StallExit.pageAheadOfList,
-                marking: marking,
-                asked: asked,
-                planned: cloud,
+              return (
+                await _unsettled(
+                  id,
+                  owner,
+                  read,
+                  snap,
+                  'the page list and page $page keep disagreeing about which '
+                  'life the page is in',
+                  row: StallExit.pageAheadOfList,
+                  marking: marking,
+                  asked: asked,
+                  planned: cloud,
+                ),
+                _Take.taken,
               );
             }
         }
-        if (_inputs != snap) return const _Restart();
+        final took = verdict!;
+        if (_inputs != snap) return (const _Restart(), took);
         if (read is ReadOfList) _unread.add(id);
         _recorded(id, read, why, role, cloud, started, snap);
+        final held = took == _Take.alreadyHeld
+            ? ', an answer the store already held'
+            : '';
         _note(
             id,
             switch (why) {
-              _Why.access when confirms => 'read $read: edit access confirmed',
-              _Why.access => 'read $read: this account still cannot edit it',
-              _ => 'read $read (${why.words})',
+              _Why.access when confirms =>
+                'read $read$held: edit access confirmed',
+              _Why.access =>
+                'read $read$held: this account still cannot edit it',
+              _ => 'read $read (${why.words})$held',
             });
         _failures.remove(id);
         notBefore.remove(id);
-        return const _Acted();
+        return (const _Acted(), took);
       case final other:
-        handled?.call();
-        return _readRefused(
-          id,
-          owner,
-          read,
-          other,
-          snap,
-          marking: marking,
-          readIn: session,
-          planned: cloud,
+        return (
+          await _readRefused(
+            id,
+            owner,
+            read,
+            other,
+            snap,
+            marking: marking,
+            readIn: session,
+            planned: cloud,
+            live: why == _Why.live,
+          ),
+          _Take.taken,
         );
     }
   }
@@ -1719,16 +1751,17 @@ final class CloudSender implements LiveResults {
     DateTime started,
     Snapshot snap,
   ) {
-    switch (why) {
-      case _Why.access when !(role?.edits ?? false):
-        _governor.climbAccess(id, snap, null);
-      case _Why.access ||
-            _Why.need ||
-            _Why.clock ||
-            _Why.adopt ||
-            _Why.retire ||
-            _Why.live:
+    switch ((role, why)) {
+      case (StoreReadRole.owner || StoreReadRole.editor, _):
         _governor.accessConfirmed(id);
+      case (_, _Why.access):
+        _governor.senderChecked(id, snap, null);
+      case (StoreReadRole.viewer, _Why.live):
+        _governor.readable(id, snap, WordFrom.liveResult);
+      case (StoreReadRole.viewer, _):
+        _governor.readable(id, snap, WordFrom.otherRead);
+      case (null, _):
+        _governor.readAnswered(id, snap);
     }
     final memory = _boundMemory(id, snap);
     _governor.remember(
@@ -1871,6 +1904,7 @@ final class CloudSender implements LiveResults {
     CloudStrategy? marking,
     int? readIn,
     CloudStrategy? planned,
+    bool live = false,
   }) async {
     switch (outcome) {
       case StoreReadRefused(
@@ -1982,7 +2016,11 @@ final class CloudSender implements LiveResults {
         }
         if (disposed) return const _Ended();
         final cannot = CannotRead(why);
-        _governor.climbAccess(id, snap, cannot);
+        if (live) {
+          _governor.unreadable(id, snap, cannot);
+        } else {
+          _governor.senderChecked(id, snap, cannot);
+        }
         final at = _readAgainAt(id, read, snap);
         _note(
           id,

@@ -691,6 +691,8 @@ final class SlowSenderStore extends SenderStore {
   var refusesBaseWrites = 0;
   var rejectsBasesOutOfPlace = 0;
   var refusesUpgradeWrites = 0;
+  var refusesStampWrites = 0;
+  void Function()? whileStampRefused;
   var baseWritesWait = Duration.zero;
 
   @override
@@ -747,6 +749,15 @@ final class SlowSenderStore extends SenderStore {
       rejectsBasesOutOfPlace--;
       return const WriteTroubled(
           ResultNotStored('the test put it out of place'));
+    }
+    if (refusesStampWrites > 0 &&
+        !readSession &&
+        events.every((event) => event is ConnectionReturned)) {
+      refusesStampWrites--;
+      final during = whileStampRefused;
+      whileStampRefused = null;
+      during?.call();
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
     }
     if (refusesUpgradeWrites > 0 &&
         events.any((event) => event is ReadRefusedForUpgrade)) {
