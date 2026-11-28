@@ -354,6 +354,28 @@ final class StrategySummary {
     sync: sync,
   );
 
+  StrategySummary filed({
+    required String name,
+    required String? folderPublicId,
+  }) => StrategySummary._(
+    publicId: publicId,
+    name: name,
+    mapData: mapData,
+    folderPublicId: folderPublicId,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    pageCount: pageCount,
+    sides: sides,
+    firstPageIsAttack: firstPageIsAttack,
+    agents: agents,
+    agentsInOrder: agentsInOrder,
+    itemCount: itemCount,
+    readability: readability,
+    elsewhere: elsewhere,
+    tallies: tallies,
+    sync: sync,
+  );
+
   StrategySummary withHeader(ReadableStrategy strategy) => StrategySummary._(
     publicId: publicId,
     name: strategy.name,

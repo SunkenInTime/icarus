@@ -109,6 +109,7 @@ final class StoreLibraryNotLoaded extends StoreLibraryLoad {
 
 typedef _Held = ({
   Map<String, StrategyData> strategies,
+  Map<String, StrategySummary> summaries,
   Map<String, Folder> folders,
   Map<String, Map<String, int>> numbers,
 });
@@ -216,9 +217,12 @@ Future<_Read> _readKept(
         return _ReadNot('the strategy $id reads as $other');
     }
   }
-  return _ReadWhole(
-    (strategies: strategies, folders: folders, numbers: numbers),
-  );
+  return _ReadWhole((
+    strategies: strategies,
+    summaries: {for (final summary in kept) summary.publicId: summary},
+    folders: folders,
+    numbers: numbers,
+  ));
 }
 
 sealed class _Commit {
@@ -283,6 +287,7 @@ LibraryWrite _failed(String words, {bool mayHaveLanded = false}) =>
 final class StoreLibrary {
   StoreLibrary._(this._store, this._lost, _Held held)
       : strategies = StoreRecords(held.strategies),
+        summaries = StoreRecords(held.summaries),
         folders = StoreRecords(held.folders),
         _numbers = held.numbers;
 
@@ -301,6 +306,7 @@ final class StoreLibrary {
   var _isLost = false;
   Map<String, Map<String, int>> _numbers;
   final StoreRecords<StrategyData> strategies;
+  final StoreRecords<StrategySummary> summaries;
   final StoreRecords<Folder> folders;
   Future<void> _turn = Future.value();
   final _inFlight = <_InFlight>[];
@@ -389,6 +395,7 @@ final class StoreLibrary {
     switch (await _readLibrary(_store)) {
       case _ReadWhole(:final held):
         strategies._replaceAll(held.strategies);
+        summaries._replaceAll(held.summaries);
         folders._replaceAll(held.folders);
         _numbers = held.numbers;
         for (final inFlight in [..._inFlight]) {
@@ -436,7 +443,12 @@ final class StoreLibrary {
       case StrategyRowsMade(rows: final made):
         rows = made;
     }
-    void show() => strategies._put(strategy.id, strategy);
+    final summary = summaryOfRows(rows);
+    void show() {
+      strategies._put(strategy.id, strategy);
+      summaries._put(strategy.id, summary);
+    }
+
     return _write(
       show: show,
       replay: show,
@@ -445,44 +457,47 @@ final class StoreLibrary {
   }
 
   Future<LibraryWrite> renameStrategy(StrategyData stored, String name) =>
-      _changeStrategy(stored, () => stored.name = name, (before) {
-        stored.name = before.name;
-      });
+      _changeHeader(
+        stored,
+        RenameStrategy(stored.id, name),
+        () => stored.name = name,
+      );
 
   Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) {
     if (_folderRefusal(folderId) case final refusal?) {
       return Future.value(_failed(refusal));
     }
-    return _changeStrategy(stored, () => stored.folderID = folderId, (before) {
-      stored.folderID = before.folderID;
-    });
+    return _changeHeader(
+      stored,
+      MoveStrategy(stored.id, folderId),
+      () => stored.folderID = folderId,
+    );
   }
 
-  Future<LibraryWrite> _changeStrategy(
+  Future<LibraryWrite> _changeHeader(
     StrategyData stored,
-    void Function() change,
-    void Function(StrategyData before) asItWas,
+    LibraryChange change,
+    void Function() apply,
   ) async {
     if (_heldRefusal(strategies, stored.id, stored) case final refusal?) {
       return _failed(refusal);
     }
-    final before = stored.copyWith();
-    change();
-    switch (strategyToRows(
-      stored,
-      storedNumbers: _numbers[stored.id] ?? const {},
-    )) {
-      case StrategyRowsRefused(:final problems):
-        asItWas(before);
-        return _failed(_unwritable(stored, problems));
-      case StrategyRowsMade(:final rows):
-        final asWritten = wholeCopyOf(stored);
-        return _write(
-          show: () => strategies._put(stored.id, stored),
-          replay: () => strategies._put(stored.id, asWritten),
-          commit: () => _putRows(rows, writtenAt: stored.versionNumber),
+    apply();
+    final asWritten = wholeCopyOf(stored);
+    final summary = summaries.get(stored.id)?.filed(
+          name: stored.name,
+          folderPublicId: stored.folderID,
         );
+    void showing(StrategyData strategy) {
+      strategies._put(stored.id, strategy);
+      if (summary != null) summaries._put(stored.id, summary);
     }
+
+    return _write(
+      show: () => showing(stored),
+      replay: () => showing(asWritten),
+      commit: () async => _commitOf(await _store.editLibrary([change])),
+    );
   }
 
   Future<_Commit> _putRows(
@@ -534,7 +549,11 @@ final class StoreLibrary {
   }
 
   Future<LibraryWrite> deleteStrategy(String id) {
-    void show() => strategies._remove(id);
+    void show() {
+      strategies._remove(id);
+      summaries._remove(id);
+    }
+
     Future<_Commit> remove() async => switch (_store.library) {
           LibraryShut(:final failure) =>
             _NotCommitted('the store is shut: $failure'),
@@ -557,6 +576,7 @@ final class StoreLibrary {
     }
     void show() {
       strategyIds.forEach(strategies._remove);
+      strategyIds.forEach(summaries._remove);
       folderIds.forEach(folders._remove);
     }
 

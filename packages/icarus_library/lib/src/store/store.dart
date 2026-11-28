@@ -1891,7 +1891,7 @@ final class LibraryStore {
       (null, _) => null,
     };
     if (writing != null) changes.add(_PutWritten(area, writing));
-    final summary = _summaryOfRows(rows);
+    final summary = summaryOfRows(rows);
     if (changes.isEmpty &&
         summary == _summaries[digest] &&
         !_unsaved.contains(digest)) {
@@ -2183,7 +2183,7 @@ RowKey? _rowOutside(StrategyRowSet rows) {
   return null;
 }
 
-StrategySummary _summaryOfRows(StrategyRowSet rows) {
+StrategySummary summaryOfRows(StrategyRowSet rows) {
   final elements = <String, List<ElementRow>>{};
   for (final row in rows.elements) {
     (elements[row.pagePublicId] ??= []).add(row);
@@ -2375,7 +2375,7 @@ final class _LibraryEdit {
         }
         if (writtenAt != null) writes.add(_PutWritten(area, writtenAt));
         _headers[id] = rows.strategy;
-        final summary = _summaryOfRows(rows);
+        final summary = summaryOfRows(rows);
         _added[id] = (rows.strategy, summary);
         _putSummary(summary);
       case RemoveStrategy(:final strategyPublicId):
@@ -2600,7 +2600,6 @@ final class _LibraryEdit {
       _summaries[digest] = headerSummary;
       return const _Next();
     }
-    final now = _storedPrecision(_store._clock());
     final changed = header.rewritten(
       name: targetName,
       folder: switch (targetFolder) {
@@ -2608,9 +2607,6 @@ final class _LibraryEdit {
         null => const ClearValue(),
       },
       revision: added == null ? header.revision + 1 : header.revision,
-      updatedAt: added == null && now.isAfter(header.updatedAt)
-          ? now
-          : header.updatedAt,
     );
     writes.add(_PutRow(area, changed));
     _headers[strategyPublicId] = changed;
