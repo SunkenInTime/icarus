@@ -195,6 +195,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -2971,6 +2972,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (folder.listSync().isEmpty) {
         throw StateError('no pictures in ${folder.path}');
       }
+    case 'forgetPictureFiles':
+      final strategyId = c.read(strategyProvider).strategyId!;
+      final folder = await PlacedImageProvider.getImageFolder(strategyId);
+      if (await folder.exists()) await folder.delete(recursive: true);
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      c.read(cloudMediaCacheProvider.notifier).resetStrategy(strategyId);
     case 'logImages':
       await _logImages(value as String);
     case 'shot':

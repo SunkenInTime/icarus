@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -15,6 +16,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
@@ -141,8 +143,11 @@ List<Override> _overrides({
   List<CloudMediaUploadJob> uploads = const [],
   String? accountId = 'account-a',
   bool outboxReliable = true,
+  Stream<bool>? connection,
 }) {
   return [
+    if (connection != null)
+      convexConnectionProvider.overrideWith((ref) => connection),
     cloudMediaUploadQueueProvider.overrideWith(
       () => _FixedUploadQueue(uploads, reliable: outboxReliable),
     ),
@@ -182,6 +187,7 @@ Widget _imageApp({
   String? accountId = 'account-a',
   bool outboxReliable = true,
   ValueNotifier<int>? rebuild,
+  Stream<bool>? connection,
 }) {
   return ProviderScope(
     overrides: _overrides(
@@ -192,6 +198,7 @@ Widget _imageApp({
       uploads: uploads,
       accountId: accountId,
       outboxReliable: outboxReliable,
+      connection: connection,
     ),
     child: ShadApp(
       home: Scaffold(
@@ -239,6 +246,81 @@ Future<void> _writeImage(Directory storage) async {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
   ));
 }
+
+class _PictureHostOfflineUntilReachable {
+  bool reachable = false;
+  int requests = 0;
+}
+
+class _PictureHostClient implements HttpClient {
+  _PictureHostClient(this.host);
+
+  final _PictureHostOfflineUntilReachable host;
+
+  @override
+  bool autoUncompress = false;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    host.requests++;
+    if (!host.reachable) throw const SocketException('offline');
+    return _PictureRequest();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PictureRequest implements HttpClientRequest {
+  @override
+  Future<HttpClientResponse> close() async => _PictureResponse();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PictureResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => _pendingPng.length;
+
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) =>
+      Stream<List<int>>.value(_pendingPng).listen(
+        onData,
+        onError: onError,
+        onDone: onDone,
+        cancelOnError: cancelOnError,
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Future<void> _letLoadsFinishInRealTime(WidgetTester tester) async {
+  for (var i = 0; i < 10; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump();
+  }
+}
+
+bool _pictureShown(WidgetTester tester) => tester
+    .widgetList<RawImage>(find.byType(RawImage))
+    .any((raw) => raw.image != null);
 
 ImageProvider _paintedImage(WidgetTester tester) {
   return _unsized(tester.widget<Image>(find.byType(Image)).image);
@@ -802,6 +884,81 @@ void main() {
         tester.takeException(),
         anyOf(isNull, isA<NetworkImageLoadException>()),
       );
+    });
+
+    testWidgets(
+        'a cloud picture that fails to load shows unavailable, and the same '
+        'URL paints once the connection is back', (tester) async {
+      final host = _PictureHostOfflineUntilReachable();
+      final connection = StreamController<bool>.broadcast();
+      addTearDown(connection.close);
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      debugNetworkImageHttpClientProvider = () => _PictureHostClient(host);
+      try {
+        await tester.pumpWidget(_imageApp(
+          source: StrategySource.cloud,
+          storageDirectory: null,
+          assets: [_asset()],
+          connection: connection.stream,
+        ));
+        connection.add(false);
+        await _letLoadsFinishInRealTime(tester);
+
+        expect(host.requests, 1);
+        expect(find.text('Image unavailable'), findsOneWidget);
+        final painted = tester.widget<Image>(find.byType(Image)).image;
+        final key = await tester.runAsync(
+          () => painted.obtainKey(ImageConfiguration.empty),
+        );
+        expect(PaintingBinding.instance.imageCache.containsKey(key!), isFalse);
+
+        host.reachable = true;
+        connection.add(true);
+        await _letLoadsFinishInRealTime(tester);
+
+        expect(host.requests, 2);
+        expect((_paintedImage(tester) as NetworkImage).url, _remoteUrl);
+        expect(find.text('Image unavailable'), findsNothing);
+        expect(_pictureShown(tester), isTrue);
+      } finally {
+        debugNetworkImageHttpClientProvider = null;
+      }
+    });
+
+    testWidgets(
+        'a cloud picture that failed to load paints once its bytes reach '
+        'the disk', (tester) async {
+      final host = _PictureHostOfflineUntilReachable();
+      final storage = await _storageWithImage(tester);
+      await tester.runAsync(() => _imageFile(storage).delete());
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      debugNetworkImageHttpClientProvider = () => _PictureHostClient(host);
+      try {
+        await tester.pumpWidget(_imageApp(
+          source: StrategySource.cloud,
+          storageDirectory: storage.path,
+          assets: [_asset()],
+          connection: Stream.value(false),
+        ));
+        await _letLoadsFinishInRealTime(tester);
+        expect(find.text('Image unavailable'), findsOneWidget);
+
+        await tester.runAsync(() => _writeImage(storage));
+        ProviderScope.containerOf(tester.element(find.byType(ImageWidget)))
+            .read(cloudMediaCacheProvider.notifier)
+            .resetStrategy('strategy-1');
+        await _letLoadsFinishInRealTime(tester);
+
+        expect(_paintedImage(tester), isA<FileImage>());
+        expect(find.text('Image unavailable'), findsNothing);
+        expect(_pictureShown(tester), isTrue);
+      } finally {
+        debugNetworkImageHttpClientProvider = null;
+      }
     });
   });
 

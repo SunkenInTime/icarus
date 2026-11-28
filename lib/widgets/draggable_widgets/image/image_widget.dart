@@ -9,6 +9,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/strategy_image_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
@@ -196,8 +197,15 @@ class ImageWidget extends ConsumerStatefulWidget {
 }
 
 class _ImageWidgetState extends ConsumerState<ImageWidget> {
+  bool _pictureFailed = false;
+  int _attempt = 0;
+
   @override
   Widget build(BuildContext context) {
+    ref.listen(convexConnectionProvider, (was, now) {
+      final reconnected = now.valueOrNull == true && was?.valueOrNull != true;
+      if (reconnected && _pictureFailed) setState(() => _attempt++);
+    });
     final coordinateSystem = CoordinateSystem.instance;
     final metrics = PlacedImageDimensions.screenSize(
       coordinateSystem: coordinateSystem,
@@ -234,37 +242,51 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
             ),
     );
 
+    final unavailable = _ImageStatePlaceholder(
+      icon: LucideIcons.imageOff,
+      label: context.l10n.canvasItemImageUnavailable,
+    );
+
     Widget buildThumb() => switch (source) {
           // Gapless, keyed by asset: this image's pending bytes keep painting
           // while its cloud URL loads, and no other image's frame carries
           // over.
           LocalImageFile() || RemoteImageUrl() || ImageBytes() => Image(
-              key: ValueKey(widget.pictureId),
+              key: ValueKey((widget.pictureId, _attempt)),
               image: image!,
               fit: BoxFit.contain,
               gaplessPlayback: true,
+              frameBuilder: (context, child, frame, _) {
+                if (frame == null) return _pictureFailed ? unavailable : child;
+                _pictureFailed = false;
+                return child;
+              },
+              errorBuilder: (context, _, __) {
+                _pictureFailed = true;
+                return unavailable;
+              },
             ),
           ImageLoading() => _ImageStatePlaceholder(
               icon: LucideIcons.loaderCircle,
               label: context.l10n.canvasItemImageSyncing,
               showSpinner: true,
             ),
-          ImageFailed() => _ImageStatePlaceholder(
-              icon: LucideIcons.imageOff,
-              label: context.l10n.canvasItemImageUnavailable,
-            ),
+          ImageFailed() => unavailable,
         };
 
     return GestureDetector(
       onTap: image == null
           ? null
-          : () => _showImageFullScreenOverlay(
+          : () {
+              if (_pictureFailed) return;
+              _showImageFullScreenOverlay(
                 context: context,
                 heroTag: 'image_${widget.id}',
                 image: image,
                 fullImage: source.imageProvider(drawnAtMost: null)!,
                 aspectRatio: widget.aspectRatio,
-              ),
+              );
+            },
       child: SizedBox(
         width: metrics.width,
         height: metrics.height,
