@@ -14,6 +14,9 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/store_library.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/widgets/library_entries.dart';
+import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -375,6 +378,65 @@ void main() {
             color: FolderColor.blue,
           ));
     });
+  });
+
+  test(
+      'with the library sorted by last edited, renaming one strategy and '
+      'moving another leaves the order as it was, on Hive and on the store '
+      'alike', () async {
+    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
+    await folders.put('folder-1', _folder('folder-1'));
+    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    for (final (index, id) in ['x', 'y', 'z'].indexed) {
+      await strategies.put(
+        id,
+        _strategy(id).copyWith(lastEdited: DateTime.utc(2026, 3, 1 + index)),
+      );
+    }
+    final byLastEdited = StrategyFilterState(
+      sortBy: SortBy.dateUpdated,
+      sortOrder: SortOrder.descending,
+    );
+    List<String> order() => [
+          for (final row in sortLibraryStrategies([
+            for (final strategy in LocalLibraryView().strategies.value)
+              LibraryStrategyRow.local(strategy, showDeviceBadge: false),
+          ], byLastEdited))
+            row.id,
+        ];
+    Future<(List<String>, List<String>)> aroundRenameAndMove() async {
+      const library = LocalLibrary();
+      final before = order();
+      (await library.renameStrategy(library.storedStrategy('y')!, 'Renamed'))
+          .orThrow();
+      (await library.moveStrategy(library.storedStrategy('z')!, 'folder-1'))
+          .orThrow();
+      return (before, order());
+    }
+
+    LocalLibrary.source = const LibraryInHive();
+    final hive = await aroundRenameAndMove();
+    await strategies.put('y', _strategy('y').copyWith(
+      lastEdited: DateTime.utc(2026, 3, 2),
+    ));
+    await strategies.put('z', _strategy('z').copyWith(
+      lastEdited: DateTime.utc(2026, 3, 3),
+    ));
+    final storage = MemoryStorage();
+    final store = await moved(MemoryEngine(storage));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    final onStore = await aroundRenameAndMove();
+    await store.close();
+    final reopened = await _open(MemoryEngine(storage));
+    LocalLibrary.source = LibraryInStore(await _loaded(reopened));
+    final afterReopen = order();
+    await reopened.close();
+
+    expect(hive.$1, ['z', 'y', 'x']);
+    expect(hive.$2, hive.$1);
+    expect(onStore.$1, hive.$1);
+    expect(onStore.$2, hive.$2);
+    expect(afterReopen, hive.$2);
   });
 
   test(

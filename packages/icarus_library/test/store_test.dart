@@ -1366,7 +1366,10 @@ void main() {
       },
     );
 
-    test('folders and moves are rows in the same store', () async {
+    test(
+        'folders and moves are rows in the same store, and a move keeps the '
+        'time the strategy was last edited, because moving it into a folder '
+        'is not an edit of it', () async {
       final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
       final lastEdited = listOf(store).strategies.single.updatedAt;
