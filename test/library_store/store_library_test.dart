@@ -464,6 +464,42 @@ void main() {
     );
   });
 
+  test(
+      'a strategy deleted and added again under the same id numbers its '
+      'first save from nothing', () async {
+    await _library();
+    final store = await moved(MemoryEngine(MemoryStorage()));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+    final stored = library.storedStrategy('a')!;
+    final page = stored.pages.first;
+    final [first, ...rest] = page.drawingData;
+    final raised = stored.copyWith(pages: [
+      page.copyWith(drawingData: [...rest, first]),
+      ...stored.pages.skip(1),
+    ]);
+    expect(await library.savePageOnScreen(raised), isA<LibraryWritten>());
+    expect(await library.deleteStrategy('a'), isA<LibraryWritten>());
+
+    expect(await library.addStrategy(raised), isA<LibraryWritten>());
+
+    final drawingIds = {for (final drawing in page.drawingData) drawing.id};
+    final numbers = switch (await readStoredRows(store, 'a')) {
+      StoredRowsRead(:final rows) => {
+          for (final element in rows.elements)
+            if (element case ReadableElementRow(:final publicId, :final sortIndex)
+                when drawingIds.contains(publicId))
+              publicId: sortIndex,
+        },
+      final other => fail('the strategy reads as $other'),
+    };
+    expect(
+      [for (final drawing in raised.pages.first.drawingData) numbers[drawing.id]],
+      [for (var i = 0; i < drawingIds.length; i++) i],
+    );
+    await store.close();
+  });
+
   group('two writes in flight', () {
     late CommitGate gate;
     late MemoryStorage storage;
