@@ -209,9 +209,7 @@ final class CallGovernor {
 
   AccessRung? access(String id, Snapshot snap) => switch (_access[id]) {
         final rung?
-            when rung.account == snap.account &&
-                rung.signIns == snap.signIns &&
-                rung.connection == snap.connection =>
+            when rung.account == snap.account && rung.signIns == snap.signIns =>
           rung,
         _ => null,
       };
@@ -235,11 +233,14 @@ final class CallGovernor {
   }
 
   void viewerAnswered(String id, Snapshot snap) {
-    final kept = access(id, snap);
+    final kept = switch (access(id, snap)) {
+      final rung? when rung.cannot == null => rung,
+      _ => null,
+    };
     _access[id] = (
       account: snap.account!,
       signIns: snap.signIns,
-      connection: snap.connection,
+      connection: kept?.connection ?? snap.connection,
       count: kept?.count ?? 0,
       at: kept?.at ?? _clock(),
       cannot: null,
@@ -308,7 +309,8 @@ final class CallGovernor {
         case (:final count, :final at, :final why)) {
       notBefore(at.add(_timing.settleAfter(count)), why);
     }
-    if (access case final rung? when rung.count > 0) {
+    if (access case final rung?
+        when rung.count > 0 && rung.connection == snap.connection) {
       notBefore(
         rung.at.add(_timing.accessAfter(rung.count) ?? _timing.readAgainAfter),
         accessRow,

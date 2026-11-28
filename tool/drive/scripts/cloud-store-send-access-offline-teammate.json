@@ -16,7 +16,7 @@
   {"waitSignal": "role-viewer", "seconds": 300},
   {"wait": 4},
   {"releaseSender": true},
-  {"waitStoreHeld": 60},
+  {"waitStoreHeld": 60, "answer": "sender"},
   {"storeSyncState": true},
   {"tapIcon": "house300"},
   {"wait": 3},

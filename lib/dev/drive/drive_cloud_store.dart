@@ -580,7 +580,11 @@ Future<List<String>> useCloudAs(
   return chosen;
 }
 
-Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
+Future<String> waitStoreHeld(
+  ProviderContainer c,
+  Duration within, {
+  bool bySender = false,
+}) async {
   final strategyId = storedCloudStrategy(c);
   final until = DateTime.now().add(within);
   while (true) {
@@ -592,15 +596,17 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
     if (standingOf(cloud.queue) == Standing.editAccessLost &&
         cloud.queue.entries.isNotEmpty &&
         viewer != null &&
-        viewer.cannot == null) {
+        viewer.cannot == null &&
+        (!bySender || viewer.count > 0)) {
       return 'CLOUDSTORE $strategyId is held for lost edit access with '
           '${cloud.queue.entries.length} entries unsent, and its page list '
-          'said this account can only view it';
+          'said this account can only view it'
+          '${bySender ? ' (the sender\'s own read, ${viewer.count} so far)' : ''}';
     }
     if (DateTime.now().isAfter(until)) {
       throw StateError(
         '$strategyId was not held for lost edit access with a viewer\'s '
-        'answer within ${within.inSeconds} s: standing '
+        '${bySender ? 'answer from the sender\'s own read ' : 'answer '}within ${within.inSeconds} s: standing '
         '${standingOf(cloud.queue).name}, ${cloud.queue.entries.length} '
         'entries, viewer answer $viewer; sender ${_senderWords(c)}',
       );

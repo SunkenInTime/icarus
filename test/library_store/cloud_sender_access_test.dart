@@ -54,6 +54,21 @@ void refusedAsViewer(World world) {
   world.commitMove(1);
 }
 
+List<Duration> readsOf(World world, String strategy, Duration from) => [
+      for (final call in world.server.readCalls)
+        if (call.strategyId == strategy &&
+            call.page == null &&
+            call.at!.difference(start) >= from)
+          call.at!.difference(start) - from,
+    ];
+
+void reconnectEvery(World world, int times, Duration apart) {
+  for (var n = 0; n < times; n++) {
+    world.connection = (world.connection ?? 1) + 1;
+    world.settle(apart);
+  }
+}
+
 void main() {
   group('a result at the point of one the store already took is settled', () {
     test('a live list at the point of the list the store took owes no read',
@@ -90,6 +105,91 @@ void main() {
         expect(Retiring.landedByPage(world.cloud()).keys, [Retiring.list]);
         expect(listReads(world, from), hasLength(1));
         expect(world.sender.couldNotResolve(strategyId), isNull);
+      });
+    });
+  });
+
+  group('the access answer across reconnects and refusals', () {
+    test(
+        'a page read refused as FORBIDDEN, then a live viewer list: the owed '
+        'page is read at once, not after the refusal\'s ten minutes', () {
+      inWorld((world) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.sender.cannotRead(strategyId), isNotNull);
+        world.server.roles[strategyId] = StoreReadRole.viewer;
+        ownerChangesTheStrategy(world, 'Shared again');
+        world.sender
+          ..liveOpened(strategyId, theList)
+          ..liveArrived(strategyId, theList, servedAccount, listNow(world));
+        world.settle();
+        expect(world.sender.cannotRead(strategyId), isNull);
+        final from = world.async.elapsed;
+        world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+        world.settle(const Duration(seconds: 5));
+        expect(
+          [
+            for (final call in world.server.readCalls)
+              if (call.page == pageId && call.at!.difference(start) >= from)
+                call,
+          ],
+          hasLength(1),
+        );
+      });
+    });
+
+    test(
+        'ten reconnects 2.01 s apart make no more than the ladder\'s six page '
+        'list reads, then stop', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        refusedAsViewer(world);
+        world.settle(const Duration(minutes: 1));
+        reconnectEvery(world, 10, const Duration(milliseconds: 2010));
+        world.settle(const Duration(minutes: 1));
+        expect(listReads(world, from), hasLength(timing.accessReads));
+        reconnectEvery(world, 10, const Duration(milliseconds: 2010));
+        world.settle(const Duration(minutes: 1));
+        expect(listReads(world, from), hasLength(timing.accessReads));
+        expect(world.face(), Face.editAccessLost);
+      });
+    });
+
+    test(
+        'twenty held strategies under ten reconnects make no more than six '
+        'page list reads each', () {
+      inWorld((world) {
+        final ids = [for (var n = 0; n < 20; n++) 'held-$n'];
+        for (final id in ids) {
+          world.addOtherStrategy(id: id);
+          world.server
+            ..roles[id] = StoreReadRole.viewer
+            ..answerWith(
+              id,
+              const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                  point: stampedWhenAnswered),
+            );
+          world.commitRename(id, 'rename-$id');
+        }
+        final from = world.async.elapsed;
+        world.settle(const Duration(minutes: 2));
+        for (final id in ids) {
+          expect(world.face(id), Face.editAccessLost, reason: id);
+        }
+        reconnectEvery(world, 10, const Duration(milliseconds: 2010));
+        world.settle(const Duration(minutes: 2));
+        for (final id in ids) {
+          expect(
+            readsOf(world, id, from),
+            allOf(isNotEmpty, hasLength(lessThanOrEqualTo(timing.accessReads))),
+            reason: id,
+          );
+        }
       });
     });
   });
