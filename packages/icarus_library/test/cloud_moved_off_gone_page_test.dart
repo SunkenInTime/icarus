@@ -123,6 +123,38 @@ void main() {
       });
     }
 
+    test('a delete first sent live while page A was listed, its answer lost, '
+        'goes again checked under the same op id once A has left, and the '
+        'server\'s replay of its first landing settles it', () {
+      final (:client, :server, seenAt: _) = deleteWaiting(behindOwn: false);
+      final first = claimAt(client, ['drop'], live);
+      final firstForm = first.ops.single as ElementDeleteOp;
+      expect(firstForm.lastWriterWins, isTrue);
+      expect(server.apply(clientId, firstForm), isA<AppliedAnswer>());
+      client.must(
+        TransportFailed(first.attempt, TransportFailure.network, at: client.at),
+      );
+      server.rows = aTrashed(server.rows);
+      client.arrive(headerReadOf(server.rows));
+      client.clock = client.at.add(const Duration(minutes: 10));
+      final again = claimAt(client, ['drop'], live);
+      final againForm = again.ops.single as ElementDeleteOp;
+      expect(againForm.opId, firstForm.opId);
+      expect(againForm.lastWriterWins, isFalse);
+      final answer = server.apply(clientId, againForm);
+      expect(
+        answer,
+        isA<NoopAnswer>().having(
+          (noop) => noop.replay,
+          'replay',
+          NoopReplay.appliedWhenFirstReceived,
+        ),
+      );
+      client.must(OpAnswered(again.attempt, answer, point: tick()));
+      expect(client.queue.entry('drop'), isNull);
+      expect(client.effects, contains(isA<OpRemoved>()));
+    });
+
     test('while page A stays on the live list, a delete sent live is last '
         'writer wins, as on main', () {
       final (:client, :server, seenAt: _) = deleteWaiting(behindOwn: false);
