@@ -117,7 +117,7 @@ void main() {
     expect(stored.pages[0].utilityData.map((u) => u.isZone).toSet(),
         {true, false});
 
-    final h = await openInEditor(container, stored, follow: false);
+    final h = await openInEditor(container, stored);
     addTearDown(h.dispose);
 
     expect(_bytes(box.get(id)), record, reason: 'the record after the load');

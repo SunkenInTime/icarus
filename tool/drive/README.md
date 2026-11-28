@@ -72,45 +72,18 @@ At the end of every run `CANVAS` counts, besides the lines above, each time an e
 
 It then watches every frame until the editor is on top, showing that strategy's first page with all of its agents and abilities. From the pointer-up it logs when that frame was built and when it was rasterised. Raster times come from the engine's frame timings, matched by frame number. The summary gives the median and worst of each, with the strategy's size and the library store's mode. Start the run with `-HiveStore` on the library to measure and, if wanted, `-LibraryStore`.
 
-With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press also starts an open of the median strategy, so a store read the editor abandons is ahead of the timed one in the store's queue. Every `OPENFRAME run` line says what the mirror was doing when the run began. `"soon": true` presses as soon as the library shows the strategy, without the pause before the press.
+With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press also starts an open of the median strategy, so a store read the editor abandons is ahead of the timed one in the store's queue. `"soon": true` presses as soon as the library shows the strategy, without the pause before the press.
 
 `{"loadCopyCost": "largest", "runs": 51}` times the copy a page's load makes of its agents, abilities and utilities, on three pages: the page with the most of them in the strategy with the most, the library page with the most wall points, and a made-up page of 100 High Tides with 50-point walls. Each `COPY` line gives the median, fastest and slowest run and what the kept copies hold, so the work cannot be dropped.
 
 `scripts/dont-save-local.json` turns autosave off, edits an agent's caption and weapon, an ability's wall and caption, a utility's caption, and moves the agent, then switches strategy and answers Don't save. It fails unless the strategy reopens exactly as saved (`{"rememberPage": tag}` and `{"expectPage": tag}` compare every item on the page), and unless a Duplicate made afterwards holds the saved items too.
 
-`{"readBackCost": "largest", "runs": 21}` (`scripts/read-back-cost.json`) times, on the strategy with the most items, what the mirror spends converting it to rows, and converting it then checking that the rows read back equal to its Hive record, and logs both medians, the worst of each and the difference as a `READBACK` line.
-
-`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers, each measured on the check alone, not on the whole save (the store's own write is not part of it):
-- **Longest step:** the worse of the longest single steps it reports, cold and after one item changed (a freehand stroke moved when there is one). It is what a user feels, a frame the mirror holds.
-- **Added per save:** the median the check adds once one item changed. It is the total work each save costs.
-
-Each number gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over.
-
-`{"readBackFrames": pick, "longestStepMs": x?}` runs the same check with the real scheduler while a frame is asked for every frame, three times on one checker: cold, after one item changed as the editor changes it (a stroke's points, its box and the strategy's `lastEdited`), and with one item at -0.0, which reads back differently. Each run logs:
-- how many breaks had no frame in them;
-- the longest step between breaks;
-- how many of the check's frames were timed, and the longest any of them waited after its vsync, matched by frame number.
-
-It fails if no frame ran, if a break had no frame, if any frame of the check was not timed, if a step of the first two runs is over `longestStepMs`, or if the -0.0 item does not read back as its page reading back differently. The third run's longest step is logged beside the target but not judged: when a part differs, the verdict's words come from main's whole-page diagnostic, one step over the whole page, which only a page that reads back differently pays. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
-
-`scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
-
-| Strategy | Longest step target | Windows release, worst of three rounds | Added per save target | Windows release, worst of three rounds |
-| --- | --- | --- | --- | --- |
-| largest | 4 ms | 2.8 ms | 8 ms | 5.0 ms |
-| Dense strokes | 16 ms | 13.6 ms | 160 ms | 30.8 ms |
-| Dense strokes, one item reading back differently (`readBackFrames`, not judged) | 16 ms | 234 ms | | |
-
-Before the check ran in steps, main measured 9.9 ms and 128 ms for the longest step, and 3.8 ms and 110 ms added per save.
-
-`{"pageTakeCost": 300, "changed": 1, "runs": 51}` times the cloud store taking a live page result, on SQLite in a temporary folder: a cloud strategy with one page of that many items (one in ten a 250-point freehand drawing, the shapes `tool/convex_cost/lib/content.mjs` writes), and a result in which `changed` of them changed. It logs a `TAKE` line with the median and worst of the longest main-isolate stretch during `record` and of the whole `record`, the median time the main isolate was busy, how many frames the app drew while it measured, and how busy the whole computer was just before and just after (all processes, from Windows' processor counter or Linux's `/proc/stat`), first as the store runs in a release build, then with every take also checked against one from scratch, as tests and driver builds run it. `"budget": {"longestStepMs": x, "recordMs": y}` judges the medians over all the step's takes (each take's longest stretch, and each take's whole `record`), never one take, with `within budget` and `over budget` lines like `READBACK`'s; an over line repeats how busy the computer was, so a failure on a busy computer can be read as one. The step fails if either median is over. `scripts/page-take-budget.json` judges one changed item on 300, and logs one on 60, ten on 300 and all 300:
+`{"pageTakeCost": 300, "changed": 1, "runs": 51}` times the cloud store taking a live page result, on SQLite in a temporary folder: a cloud strategy with one page of that many items (one in ten a 250-point freehand drawing, the shapes `tool/convex_cost/lib/content.mjs` writes), and a result in which `changed` of them changed. It logs a `TAKE` line with the median and worst of the longest main-isolate stretch during `record` and of the whole `record`, the median time the main isolate was busy, how many frames the app drew while it measured, and how busy the whole computer was just before and just after (all processes, from Windows' processor counter or Linux's `/proc/stat`), first as the store runs in a release build, then with every take also checked against one from scratch, as tests and driver builds run it. `"budget": {"longestStepMs": x, "recordMs": y}` judges the medians over all the step's takes (each take's longest stretch, and each take's whole `record`), never one take, with `within budget` and `over budget` lines; an over line repeats how busy the computer was, so a failure on a busy computer can be read as one. The step fails if either median is over. `scripts/page-take-budget.json` judges one changed item on 300, and logs one on 60, ten on 300 and all 300:
 - `{"liveHandOffCost": runs}` times what the store's part of one live page answer costs the main thread: turning the cloud page the editor has open (its `RemotePageSnapshot`) into the store's result (`pageOutcomeOf`), `runs` times after one warm-up. It logs a `HANDOFF` line with the item count and the median, fastest and slowest. `live-handoff-cost.json` runs it at 300 and 3,000 items ([#862](https://github.com/SunkenInTime/icarus/issues/862)).
 
 | Page | Longest step target | Windows release, 2026-11-25 | Record target | Windows release, 2026-11-25 |
 | --- | --- | --- | --- | --- |
 | 1 of 300 items changed | 4 ms | 3.83 ms | 8 ms | 5.72 ms |
-
-The round library the read-back scripts run on is made with `ICARUS_READ_ROUND_FIXTURE=<new folder> ICARUS_READ_ROUND_SOURCES=<Hive stores separated by ;> flutter test test/library_store/read_mode_round_test.dart`. That copies the stores, makes duplicate names unique against every name in them (a second `A` beside an existing `A (2)` becomes `A (3)`), and adds a strategy with an agent at x = -0.0, one with lineups saved interleaved and one page of dense strokes. `ICARUS_READ_ROUND_BEFORE=<library> ICARUS_READ_ROUND_AFTER=<run>/store-main` with the same test compares Hive before and after, strategy by strategy, save time aside. At the end of every mirror run, the store check lists a strategy the mirror recorded as reading back differently as `STORE expected`. It fails on a difference the mirror did not record, or on a strategy recorded as different that reads back equal.
 
 ## A change in one cloud strategy, then another opened
 
@@ -190,33 +163,17 @@ The scripts: `cloud-store-send.json` (ops sent and the store equal to the server
 - `cloud-store-race-owner.json` with `cloud-store-race-teammate.json`: both move the same item at once while active; both go unchecked and converge on the last arrival, with no prompt.
 - `cloud-store-race-quiet-owner.json` with `cloud-store-race-quiet-teammate.json`: the same after 30 s of quiet; both go checked, and one of them is asked.
 
-## The library store in shadow
+## Every run
 
-`--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.
-
-```sh
-dart tool/drive/linux.dart run --script tool/drive/scripts/library-store-shadow.json \
-  --library-store shadow --hive-store ~/Code/<scratch>/store
-```
-
-Every run logs `FIRSTFRAME <ms> ms store=<off|shadow|mirror>`, the time from the start of `main` to the first frame on screen; `scripts/first-frame.json` does nothing else. The steps:
-
-- `{"libraryStore": "shadow", "seconds": n?, "expect": {...}?}` waits up to n seconds (600 by default) for the copy and the comparison, logs them as `STORE` lines, and fails unless the store opened, the copy finished with nothing left out, every strategy and folder reads back the same as Hive, and neither library box (`strategy_box.hive`, `folder_box.hive`) changed while it ran. Other boxes the app writes on its own in that time are listed, not failed; `test/library_store/shadow_copy_test.dart` hashes every Hive file around the copy alone. `expect` can name counts that must match: `copied`, `unchanged`, `tookHiveVersion`, `removedWithHive`.
-- With `"hidden": true`, the step first tells the app it is hidden, as the system does when its window is minimized, so no frame is drawn while it waits, then shows it again. `scripts/library-store-shadow-hidden.json` uses it: the copy and the check must finish without a frame.
-- `{"checkLibraryStore": 1}` reads every strategy back again and fails on any difference.
-
-With `--library-store mirror` (`-LibraryStore mirror`) the app does the same copy at start, and after it every save of a local strategy or folder that Hive accepts is followed by the matching store write, through one queue. At the end of every script the driver waits for that queue to drain, checks the store against Hive, logs the `STORE` lines and fails unless it is exact; `{"holdLibraryStore": true}` stops the queue, so a run can end with saves Hive holds and the store does not (`scripts/library-store-mirror-hold.json`), for the next start to bring up to date.
-
-In mirror runs the driver logs what is on screen right after each step, then again (only if it changed) once the mirror has written what is pending, so a state the list passes through on its way shows in the log; a step after which the mirror has not drained within 30 s fails.
+Every run logs `FIRSTFRAME <ms> ms store=<off|store>`, the time from the start of `main` to the first frame on screen; `scripts/first-frame.json` does nothing else.
 
 Between `{"framesStart": 1}` and `{"framesLog": tag}`, the driver also finds the frame drawn after each notice the library list sends and `framesLog` logs that frame's build and raster times as `FRAMES tag after a list notice`. The frame is the one whose vsync started within 25 ms before the frame time Flutter was given, which is one refresh later; a frame with no timing logs `not timed`.
 
-- `{"expectStoreRefuses": [ids]}` names strategies the script expects the store not to hold; the end-of-run check passes when they are the only difference.
 - `{"watchLibraryText": t, "since": mark, "gone": b?, "seconds": n?}` watches, behind the next steps, for text t to reach (or with `gone`, to leave) the library on screen, and logs `TIMED` with the milliseconds since mark. It waits for the next action marked with that name, not one marked earlier, allows n seconds (10 by default) from that action, and fails if the text is already where it is watched for when the watch starts. `tapText`, `tapKey`, `dragAt` and `key` take `"mark": name`, which starts that clock as the button is let go or the key pressed.
 
 Every run logs `FRAMES whole run`: the frames drawn, the worst one from the start of its build to the end of its raster, how many took over 50 ms, and the longest the main isolate was busy, measured passively from the start of the script to its end.
 
-`test/library_store/drive_runs_test.dart` compares two runs' saved libraries (`ICARUS_COMPARE_RUNS=a:b;c:d`, run ids, generated ids and times set aside) and checks the store a run left against its Hive library without copying first (`ICARUS_CHECK_RUNS=a;b`).
+`test/library_store/drive_runs_test.dart` compares two runs' saved libraries (`ICARUS_COMPARE_RUNS=a:b;c:d`, run ids, generated ids and times set aside).
 
 At the end of a run the driver closes the store and logs `STORE closed`.
 
@@ -230,7 +187,7 @@ With `"second": "undo"` the second action is Ctrl+Z instead of the page click: b
 
 It times the open from inside the app, with provider listeners rather than polling. For each run it logs `RACE run`: whether a's first page was saved without its agents, when the canvas was cleared, when the second click landed, and when b became the open strategy. The window is the time between the clear and that moment. Then it puts a back as it was. `RACE summary` gives the count and the window's median and worst. With `expectEmptied` the step fails unless the count matches.
 
-`--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
+`--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` to see what the killed run left.
 
 ## The library on the store
 

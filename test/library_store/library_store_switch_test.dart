@@ -14,18 +14,7 @@ void main() {
     );
   });
 
-  test(
-      'a driver or debug build can ask for shadow, and the flag never reaches the files to open',
-      () {
-    final launch = LibraryStoreLaunch.parse(
-      const ['--hive-store-dir=/tmp/s', '--library-store=shadow', 'a.ica'],
-      mayShadow: true,
-    );
-    expect(launch.choice, isA<StoreSwitchShadow>());
-    expect(launch.otherArgs, ['--hive-store-dir=/tmp/s', 'a.ica']);
-  });
-
-  for (final removed in ['read', 'ops']) {
+  for (final removed in ['shadow', 'mirror', 'read', 'ops']) {
     for (final mayShadow in [true, false]) {
       test(
           'the removed $removed mode is still taken and stays off '
@@ -82,7 +71,7 @@ void main() {
       '/home/me/a.ica',
     ];
     final launch = LibraryStoreLaunch.parse(args, mayShadow: true);
-    expect(launch.choice, isA<StoreSwitchShadow>());
+    expect(launch.choice, isA<StoreSwitchOff>());
     expect(launch.otherArgs, [
       r'C:\Strats\B site.ica',
       '--library-store=off.ica',
@@ -132,11 +121,11 @@ void main() {
     }
 
     final both = LibraryStoreLaunch.parse(
-      const ['--cloud-store=send', '--library-store=mirror'],
+      const ['--cloud-store=send', '--library-store=store'],
       mayShadow: true,
     );
     expect(both.cloud, isA<CloudStoreSend>());
-    expect(both.choice, isA<StoreSwitchMirror>());
+    expect(both.choice, isA<StoreSwitchStore>());
     expect(both.otherArgs, isEmpty);
   });
 

@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -188,10 +187,10 @@ Future<LibraryMigration> _copyFromHive(
   LibraryStore store,
   String hiveDirectory,
 ) async {
-  if (!hiveLibraryOnDisk(hiveDirectory)) {
+  if (!LocalLibrary.hiveFilesIn(hiveDirectory)) {
     return migrateLibraryIntoStore(store, strategies: [], folders: []);
   }
-  await openHiveLibrary();
+  await LocalLibrary.openHiveBoxes();
   return migrateLibraryIntoStore(
     store,
     strategies: _ownIdFirst([

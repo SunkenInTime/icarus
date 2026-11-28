@@ -160,7 +160,7 @@ void main() {
     if (cloud) {
       beginCloudSender(
         container,
-        (opening: opening, localShadow: false, cloudSends: true),
+        (opening: opening, cloudSends: true),
         build: 'b',
       );
       await _until(
@@ -359,7 +359,7 @@ void main() {
       );
       beginCloudSender(
         container,
-        (opening: opening, localShadow: false, cloudSends: true),
+        (opening: opening, cloudSends: true),
         build: 'b',
       );
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -446,7 +446,6 @@ void main() {
       container,
       launch([LibraryStoreLaunch.offFlag, LibraryStoreLaunch.cloudSendFlag]),
       hiveDirectory: directory.path,
-      allowsLocalLibrary: true,
       build: 'b',
     );
     beginCloudSender(container, stores, build: 'b');
@@ -475,7 +474,6 @@ void main() {
       container,
       launch([LibraryStoreLaunch.shadowFlag]),
       hiveDirectory: directory.path,
-      allowsLocalLibrary: true,
       build: 'b',
     );
     await stores.opening;

@@ -1,11 +1,51 @@
 import 'package:flutter/painting.dart' show Offset;
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'shadow_copy_test.dart' show handBuilt;
+StrategyData handBuilt(
+        {Offset agentAt = const Offset(10, 20), bool agentAlly = true}) =>
+    StrategyData(
+      id: 'hand-1',
+      name: 'B split',
+      mapData: MapValue.ascent,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.utc(2026, 1, 2, 3, 4, 5),
+      createdAt: DateTime.utc(2026, 1, 1),
+      folderID: null,
+      pages: [
+        StrategyPage(
+          id: 'p1',
+          name: 'Page 1',
+          drawingData: const [],
+          agentData: [
+            PlacedAgent(
+                id: 'a1',
+                type: AgentType.jett,
+                position: agentAt,
+                isAlly: agentAlly),
+          ],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: 0,
+          isAttack: true,
+          settings: StrategySettings(),
+        ),
+      ],
+    );
+
+
 
 const strategyId = 'hand-1';
 const pageId = 'p1';
