@@ -1585,6 +1585,13 @@ final class CloudSender implements LiveResults {
     };
   }
 
+  static (_Step, _Take) _owedUnlessTroubled(_Step step) => (
+        step,
+        step is _Skipped && step.why == StallExit.localTrouble
+            ? _Take.troubled
+            : _Take.owed,
+      );
+
   Future<(_Step, _Take)> _answered(
     String id,
     Account owner,
@@ -1641,7 +1648,7 @@ final class CloudSender implements LiveResults {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: late);
             _governor.keep(id, read, _refusedMark(read, why, asked));
-            return (
+            return _owedUnlessTroubled(
               await _unsettled(
                 id,
                 owner,
@@ -1651,7 +1658,6 @@ final class CloudSender implements LiveResults {
                 row: StallExit.unreadableRead,
                 planned: cloud,
               ),
-              _Take.owed,
             );
           case WriteTroubled(:final trouble):
             troubled();
@@ -1662,7 +1668,7 @@ final class CloudSender implements LiveResults {
             return (const _Acted(), _Take.olderThanTaken);
           case WrittenWith(:final notApplied) when verdict == null:
             _governor.written(id, read, late: late);
-            return (
+            return _owedUnlessTroubled(
               await _unsettled(
                 id,
                 owner,
@@ -1674,7 +1680,6 @@ final class CloudSender implements LiveResults {
                 asked: asked,
                 planned: cloud,
               ),
-              _Take.owed,
             );
           case WrittenWith(:final effects):
             _governor.written(id, read, late: late);

@@ -131,6 +131,32 @@ void main() {
     });
   });
 
+  test(
+      'a declined live list whose kept mark cannot be written is kept and '
+      'taken again once the disk writes, as on main, not owed a read at once',
+      () {
+    inWorld((world) {
+      world.sender.liveOpened(strategyId, theList);
+      world.settle();
+      ownerChangesTheStrategy(world, 'Ended');
+      final stale = listNow(world);
+      world.server.connection = 2;
+      world.slowStore.refusesStampWrites = 1;
+      world.sender.liveArrived(strategyId, theList, servedAccount, stale);
+      world.settle(const Duration(minutes: 1));
+      expect(world.slowStore.refusesStampWrites, 0);
+      expect(
+        [
+          for (final event in world.written())
+            if (event case BaseArrived(:final point) when point == stale.point)
+              event,
+        ],
+        hasLength(2),
+      );
+      expect(world.sender.liveOwed, 1);
+    });
+  });
+
   group('the access answer across reconnects and refusals', () {
     test(
         'a page read refused as FORBIDDEN, then a live viewer list: the owed '
