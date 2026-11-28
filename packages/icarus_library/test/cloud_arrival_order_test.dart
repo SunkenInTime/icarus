@@ -694,7 +694,7 @@ final class Reference {
     if (_olderThanPageTaken(page, read.tick)) return;
     if (!listed.contains(page)) {
       if (listTakenAt == null || listTakenAt! < read.tick) {
-        listOwedFrom ??= read.tick;
+        _oweListFrom(read.tick);
       }
       return;
     }
@@ -705,10 +705,19 @@ final class Reference {
     _pageSettles(read, page);
   }
 
+  void _oweListFrom(int tick) {
+    final owed = listOwedFrom;
+    if (owed == null || owed < tick) listOwedFrom = tick;
+  }
+
   void _pageGone(ReadFact read, String page) {
     if (_olderThanPageTaken(page, read.tick)) return;
     if (_listNewerThan(read.tick)) return;
     if (listTakenAt == read.tick && listed.contains(page)) return;
+    if (listed.contains(page)) {
+      count('a live page read not found, owing the list');
+      _oweListFrom(read.tick);
+    }
     pageTakenAt[page] = read.tick;
     listed = {...listed}..remove(page);
     _removeContent(page, read.tick);

@@ -129,10 +129,19 @@ void main() {
     });
 
     test('a list that shows a page live does not bring it back when the '
-        'page\'s own newer claim is gone', () {
+        'page\'s own newer claim is not found: the list it owes must be at '
+        'or after that claim', () {
       final client = connectedOn();
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(5)));
-      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(4)));
+      expect(client.queue.shown.list, isA<ReadOwed>());
+      expect(
+        notApplicable(
+          client.step(
+            arrivalAt(client, headerReadOf(initialRows()), pointAt(4)),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
       expect(client.queue.shown.pages, isNot(contains('page-a')));
       expect(client.queue.shown.settings, isNot(contains('page-a')));
     });
@@ -151,7 +160,7 @@ void main() {
         ),
       );
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(5)));
-      client.must(arrivalAt(client, headerReadOf(renamed), pointAt(4)));
+      client.step(arrivalAt(client, headerReadOf(renamed), pointAt(4)));
       expect(client.queue.shown.pages, isNot(contains('page-a')));
       expect(client.queue.shown.highest[const PageTarget('page-a')], held);
     });
@@ -234,8 +243,8 @@ void main() {
         'list', () {
       final client = connectedOn();
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(6)));
-      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(4)));
-      client.must(
+      client.step(arrivalAt(client, headerReadOf(initialRows()), pointAt(4)));
+      client.step(
         arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(5)),
       );
       expect(client.queue.shown.pages, isNot(contains('page-a')));
@@ -251,16 +260,16 @@ void main() {
       final client = connectedOn();
       client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(5)));
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(8)));
-      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(6)));
+      client.step(arrivalAt(client, headerReadOf(initialRows()), pointAt(6)));
       expect(client.queue.shown.pages, isNot(contains('page-a')));
-      client.must(
+      client.step(
         arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(7)),
       );
       expect(client.queue.shown.pages, isNot(contains('page-a')));
     });
 
     test('a newer page result showing a trashed page live waits for the list '
-        'to confirm it; a newer list showing it trashed keeps its rows', () {
+        'to confirm it; a newer list showing it trashed drops its rows', () {
       final live = connectedOn();
       live.must(
         arrivalAt(
@@ -300,13 +309,14 @@ void main() {
           pointAt(8),
         ),
       );
+      expect(items, isNotEmpty);
       expect(trashed.queue.shown.trashed, contains('page-a'));
       expect(trashed.queue.shown.pages, isNot(contains('page-a')));
-      expect(itemsOnA(trashed), items);
+      expect(itemsOnA(trashed), isEmpty);
     });
 
     test('an older page result of a page a newer list shows trashed takes '
-        'its items and not its page row', () {
+        'neither its items nor its page row', () {
       final client = connectedOn();
       client.must(
         arrivalAt(
@@ -321,7 +331,7 @@ void main() {
       expect(shown.pages, isNot(contains('page-a')));
       expect(shown.list, isNot(isA<ReadOwed>()));
       expect(shown.pagesTaken['page-a']?.snapshot, pointAt(8).snapshot);
-      expect(itemsOnA(client), isNotEmpty);
+      expect(itemsOnA(client), isEmpty);
     });
   });
 
@@ -478,15 +488,15 @@ void main() {
     client.must(arrivalAt(client, const PageGone('page-a'), pointAt(30)));
     expect(client.queue.shown.pages, isNot(contains('page-a')));
     final later = replaced(initialRows());
-    client.must(arrivalAt(client, headerReadOf(later), pointAt(20)));
+    client.must(arrivalAt(client, headerReadOf(later), pointAt(31)));
     final adopted = client.queue.shown;
     expect(adopted.strategy?.life, createdAtOf(later.strategy));
     expect(adopted.pages, contains('page-a'));
     expect(adopted.pagesTaken, isEmpty);
-    expect(adopted.listTaken?.snapshot, pointAt(20).snapshot);
+    expect(adopted.listTaken?.snapshot, pointAt(31).snapshot);
     expect(adopted.listRefusedAt, isNull);
     expect(adopted.pagesRefusedAt, isEmpty);
-    client.must(arrivalAt(client, const PageGone('page-a'), pointAt(30)));
+    client.must(arrivalAt(client, const PageGone('page-a'), pointAt(40)));
     expect(client.queue.shown.pages, isNot(contains('page-a')));
   });
 }

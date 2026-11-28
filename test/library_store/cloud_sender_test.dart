@@ -1941,7 +1941,8 @@ void main() {
 
     test(
         'a page delete whose page a teammate deletes between its two reads '
-        'is decided by the newer page-gone, not left waiting', () {
+        'is decided by the page list its not-found read owes, not left '
+        'waiting', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       inWorld(
@@ -1964,7 +1965,7 @@ void main() {
           };
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
-          expect(readsAfter(world, 0), ['list', 'page p2']);
+          expect(readsAfter(world, 0), ['list', 'page p2', 'list']);
           expect(world.queueLength(), 0);
         },
         storage: storage,
@@ -2014,6 +2015,30 @@ void main() {
         addStrategy: false,
         clientId: 'client-2',
       );
+    });
+
+    test(
+        'landed work whose page a teammate put in the trash is retired once a '
+        'result shows the page not live, and the page is not read again once '
+        'the list holds it in the trash', () {
+      inWorld((world) {
+        world.secondPageOnServer();
+        world.commitMove(1);
+        world.settle();
+        expect(world.cloud().queue.landed, isNotEmpty);
+        world.teammateTrashesPage(pageId);
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(minutes: 40));
+        expect(world.cloud().queue.landed, isEmpty);
+        final reads = readsAfter(world, before);
+        expect(reads, contains('list'));
+        expect(
+          reads.skip(reads.indexOf('list')),
+          isNot(contains('page $pageId')),
+        );
+        expect(reads.where((read) => read == 'page $pageId').length, 1);
+        expect(world.sender.couldNotResolve(strategyId), isNull);
+      });
     });
 
     test(
@@ -3075,9 +3100,10 @@ void main() {
     });
 
     test(
-        'a page delete whose page results the disk refuses once each is '
-        'written from the result in hand, read once more after each late '
-        'write, and the refusals are not counted toward could not resolve', () {
+        'a page delete whose page result the disk refuses is written from the '
+        'result in hand and goes out; once it lands the page list is read, and '
+        'the page it puts in the trash is not read again for the late write, '
+        'and the refusal is not counted toward could not resolve', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -3093,14 +3119,12 @@ void main() {
           final before = server.readCalls.length;
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
-          expect(
-            readsAfter(world, before).where((read) => read == 'page p2'),
-            hasLength(3),
-          );
-          expect(
-            world.readsRecorded().where((read) => read == 'page p2'),
-            hasLength(3),
-          );
+          expect(readsAfter(world, before), ['list', 'page p2', 'list']);
+          expect(world.readsRecorded(), [
+            'the page list',
+            'page p2',
+            'the page list',
+          ]);
           expect(world.sender.couldNotResolve(strategyId), isNull);
           expect(
             [for (final call in server.calls) ...call.opIds],

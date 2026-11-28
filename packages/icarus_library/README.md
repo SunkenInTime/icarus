@@ -1556,11 +1556,31 @@ or one from an ended session stores neither.
 from subscriptions, which deliver ordered states, so the latest one wins:
 
 - A header replaces the strategy row, the page rows and the settings, and a
-  page it no longer lists is gone, with its settings and content.
+  page it no longer lists is gone, with its settings and content. The store's
+  page lists ask for the trash (`includeTrashed`), so a header also lists
+  each page in the trash as the server does, a `ConfirmedTrashedPage`.
 - A page read replaces that page's row and its whole content. A row it
   holds that the cached rows have on another page at a higher revision stays
   where it is.
-- A page-gone answer removes the page.
+- A page in the trash holds no content. One decision, `Shown.toTheTrash`,
+  takes its content, its items and its read mark, whichever result says so:
+  a header listing the page in the trash, a page read answering not found
+  for a page the store holds in the trash (the server answers a trashed
+  page's read that way), a page read older than the header that trashed the
+  page, a not-found read of a page held live, or this device's own page
+  delete landing. What stays is the trashed row the header listed. For the
+  last two the store does not have that row yet: the page is not live any
+  more, its row goes, and a page list is owed (at or after that result), so
+  the list decides between the trash and gone; ops on the page wait for it.
+- A page read answering not found never removes a page held in the trash,
+  and never stops an older header from listing it there. Only a not-found
+  for a page the store has never held, or a list without the page, makes it
+  gone, and a page in the trash is not gone: an op on it goes, and the
+  server judges it.
+- Landed work on a page that went to the trash is retired by the result that
+  puts it there, at or after its answer, as for a page that is gone; that
+  includes an item edit that names no page, by the page the store held its
+  row on. It asks for the page list, never for a read of the trashed page.
 - A result from a session that has ended changes nothing.
 
 **A queue row this build cannot read holds the whole strategy.** An entry,
@@ -1856,7 +1876,11 @@ and `_judge` is the only place an outgoing revision is chosen.
   drew it).
   It needs the user when a result of this session shows the row otherwise,
   when a result of its page no longer holds a row that results showed or this
-  device added, or when its page is gone (`RowPageGone`). A solo session
+  device added, or when its page is gone (`RowPageGone`). A page the store
+  holds in the trash is not gone: an op on it goes and the server judges it
+  (in practice `RefusedAsPageDeleted`). After a not-found read of its page
+  while the store held the page live, it waits for the page list that
+  decides between the trash and gone. A solo session
   waits only after a session opens: such an op made behind landed work, or
   behind work queued in an earlier session, waits for its row's first result
   in the new session.

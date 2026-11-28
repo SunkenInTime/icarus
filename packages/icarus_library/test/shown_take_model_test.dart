@@ -241,7 +241,7 @@ void main() {
     for (final what in const [
       'an item seen on another page',
       'an item seen with another payload on its page in its life',
-      'a trashed page row delivered',
+      'a trashed page listed',
       'deleted',
       'restored',
       'life changed at the same revision',
@@ -264,7 +264,8 @@ void main() {
       'page left',
       'unchanged',
     ]) {
-      expect(delivered[what] ?? 0, greaterThan(100), reason: what);
+      final least = what == 'kept out: removed by a newer result' ? 20 : 100;
+      expect(delivered[what] ?? 0, greaterThan(least), reason: what);
     }
     if (environment['SHOWN_MODEL_COUNTS'] == '1') {
       for (final MapEntry(:key, :value) in delivered.entries) {

@@ -13,6 +13,7 @@ import 'cloud_ordering_rules_test.dart'
         arrivalOf,
         connectedOn,
         e1Of,
+        listWithout,
         orderAt,
         pageA,
         pageAWithout,
@@ -356,8 +357,9 @@ void main() {
   });
 
   group('a page the queue holds as gone', () {
-    test('a page-gone from before our answer on the page does not make an '
-        'edit behind our own work on it ask the user; one from after does', () {
+    test('a page list without the page from before our answer on it does not '
+        'make an edit behind our own work on it ask the user; one from after '
+        'does', () {
       final client = connectedOn();
       client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
       client.must(arrivalAt(client, pageA(), pointAt(3)));
@@ -372,10 +374,16 @@ void main() {
       );
       client.edit(movePatch('second', x: 20, expected: 2));
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(8)));
-      expect(client.queue.shown.goneThisSession, contains('page-a'));
+      expect(client.queue.shown.pages, isNot(contains('page-a')));
+      expect(client.queue.shown.list, isA<ReadOwed>());
+      client.must(
+        arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(9)),
+      );
       expect(client.queue.shown.pageCurrent('page-a'), isFalse);
       expect(stateIn(client, 'second'), isNot(isA<NeedsUser>()));
-      client.must(arrivalAt(client, const PageGone('page-a'), pointAt(12)));
+      client.must(
+        arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(12)),
+      );
       expect(stateIn(client, 'second'), const NeedsUser(RowPageGone()));
     });
   });

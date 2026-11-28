@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 
+import 'cloud_support.dart' show listedTrashed, trashedAsListed;
 import 'support.dart';
 
 const serverPages = ['page-a', 'page-b', 'page-c'];
@@ -294,7 +295,12 @@ final class RandomServer {
     final result = ServerResult(
       HeaderRead(
         strategy: rows().strategy,
-        pages: rows().pages.toList(),
+        pages: [
+          ...rows().pages,
+          for (final page in serverPages)
+            if (trashed.contains(page))
+              listedTrashed(trashedAsListed(trashedPageRow(page))),
+        ],
         settings: rows().settings.toList(),
       ),
       ['page list', for (final page in serverPages) ..._deliveredPage(page)],
@@ -312,8 +318,7 @@ final class RandomServer {
       }
     }
     final page = serverPages[random.nextInt(serverPages.length)];
-    final trashedRow = trashed.contains(page) && random.nextBool();
-    if (trashed.contains(page) && !trashedRow) {
+    if (trashed.contains(page)) {
       _made('trashed page read');
       return ServerResult(PageGone(page), [
         'trashed page read',
@@ -331,13 +336,10 @@ final class RandomServer {
     ];
     final leftOut = included.length < onPage.length;
     if (leftOut) _made('rows left out of a read');
-    final pageRowRead = trashedRow ? trashedPageRow(page) : pageRow(page);
-    final readTrashed = pageRowRead is TrashedPage;
-    if (readTrashed) _made('trashed page row read');
     final rows = [for (final item in included) item.row];
     final result = ServerResult(
       PageRead(
-        page: pageRowRead,
+        page: pageRow(page),
         elements: [
           for (final row in rows)
             if (row is ElementRow) row,
@@ -349,7 +351,6 @@ final class RandomServer {
       ),
       [
         if (leftOut) 'rows left out of a read',
-        if (readTrashed) 'trashed page row read',
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],
@@ -367,6 +368,11 @@ final class Observed {
   void _count(String what) => counts[what] = (counts[what] ?? 0) + 1;
 
   void see(ArrivedBase base) {
+    if (base case HeaderRead(
+      :final pages,
+    ) when pages.any((page) => page is TrashedPage)) {
+      _count('a trashed page listed');
+    }
     if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
       if (page is TrashedPage) _count('a trashed page row delivered');
       for (final row in <Row>[...elements, ...lineupGroups]) {

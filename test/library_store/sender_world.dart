@@ -458,10 +458,25 @@ final class FakeServer {
       );
     return HeaderRead(
       strategy: held.strategy as StrategyRow,
-      pages: [for (final page in pages) lived(page)],
-      settings: [for (final row in held.settings) lived(row)],
+      pages: [for (final page in pages) listed(lived(page))],
+      settings: [
+        for (final row in held.settings)
+          if (held.page(row.pagePublicId) is! TrashedPage) lived(row),
+      ],
     );
   }
+
+  PageRow listed(PageRow page) => switch (page) {
+        PendingTrashedPage() => switch (PageRow.decode({
+            ...page.toJson(),
+            'deletedAt': start.millisecondsSinceEpoch,
+            'deletedBy': 'you',
+          })) {
+            Read(:final value) => value,
+            final other => throw StateError('$page: $other'),
+          },
+        _ => page,
+      };
 
   StoreReadOutcome _answerRead(ReadCall call) {
     final held = rows[call.strategyId];
@@ -480,7 +495,7 @@ final class FakeServer {
       );
     }
     final pageRow = held.page(page);
-    if (pageRow == null) {
+    if (pageRow == null || pageRow is TrashedPage) {
       return StoreReadAnswered(PageGone(page), point: stamp());
     }
     return StoreReadAnswered(
@@ -1067,6 +1082,22 @@ final class World {
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
+  }
+
+  void teammateTrashesPage(String page) {
+    final rows = server.rows[strategyId]!;
+    server.rows[strategyId] = switch (applyOp(
+      rows,
+      PageDeleteOp(
+        opId: 'their-trash-$page',
+        pagePublicId: page,
+        expectedStrategyRevision: rows.strategy.revision,
+      ),
+    )) {
+      OpApplied(rows: final written) => rows.withRows(written),
+      final other =>
+        throw StateError('the teammate could not trash $page: $other'),
+    };
   }
 
   void teammateDeletesPage(String page) {

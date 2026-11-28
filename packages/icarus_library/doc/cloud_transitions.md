@@ -26,7 +26,7 @@ An op names the revision the user's edit was made against. The device keeps, per
 
 - An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. A batch refused whole (upgrade, sign-in, access) was never tried, so it does not start that clock, even when the refusal arrives after the attempt was given up. A transition that finds the 29 days passed records it, even when it changes nothing else; views show only what was recorded, and `look` records and returns the views of the queue it returns. Once recorded, the entry waits for the user and is never sent again.
 - The queue cannot stop a send it already handed over. The sender must give an attempt up as unanswered (`TransportFailed`) within `sendGiveUpAfter` (one hour) of claiming it, well inside the one-day margin between the queue's window and the server's memory. An open attempt shows as sending until the sender does so.
-- Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later, or until a result about the page its op names, at or after its answer by order and server time, shows that page gone: that page's own page-gone, or a list newer than the page's own result that no longer has it. An item edit that names no page is not retired this way, as an answer names a revision and not where the row is. A result about another page never retires work, and while the strategy itself is gone nothing retires. A delete this device made stays known as its own until a result shows a later revision of the row or its page is gone that way. An undo onto a page that is gone asks the user, with that reason, whether or not this device's delete is still drawn.
+- Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later, or until a result about the page its op names, at or after its answer by order and server time, shows that page no longer live: that page's own not-found read, or a list newer than the page's own result that lists it in the trash or not at all. Work on a page the store holds in the trash waits for the page list, not a read of the page, which can only answer not found. An item edit that names no page is retired this way only when a result puts the page the store held its row on in the trash, as an answer names a revision and not where the row is. A result about another page never retires work, and while the strategy itself is gone nothing retires. A delete this device made stays known as its own until a result shows a later revision of the row or its page is gone that way. An undo onto a page that is gone asks the user, with that reason, whether or not this device's delete is still drawn.
 
 ## Which copy of a row a result leaves held
 
@@ -81,7 +81,8 @@ Starts as: waiting.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
@@ -114,7 +115,8 @@ Starts as: waiting, behind first (sameRow).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list, behind first (sameRow); page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed; defers page-a for the page list |
@@ -139,7 +141,8 @@ Starts as: waiting, awaiting a result for ElementTarget(e1).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; defers page-a for the page list |
@@ -164,7 +167,8 @@ Starts as: waiting, awaiting a result for the page list, awaiting a result for p
 | result: header as it is | x: waiting, awaiting a result for page page-a |
 | result: page-a with the item at revision 2 | x: waiting, awaiting a result for the page list |
 | result: page-a with the item as this device wrote it at 2 | x: waiting, awaiting a result for the page list |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | x: waiting, awaiting a result for page page-a |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -189,7 +193,8 @@ Starts as: gone; page list owed.
 | result: header as it is | page list read this session |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | page list read this session |
 | result: strategy gone | standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -233,13 +238,13 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | account changed | page-a not read this session; page-b not read this session; opens session 2 |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; page-b not read this session |
 | result: strategy gone | x: waiting; standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of a later life than 1767322800000, or of another life from a later connection or session |
 | result: page-a of another life | page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: page list without page-b; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## set aside after the strategy was replaced
 
@@ -257,14 +262,14 @@ Starts as: set aside.
 | account changed | page list not read this session; opens session 2 |
 | result: page-a with the item at revision 2 | page-a read this session |
 | result: page-a with the item as this device wrote it at 2 | page-a read this session |
-| result: page-b gone | unchanged |
+| result: page-b not found | page list owed |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | user: discard what was set aside | discards 1 set aside |
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | unchanged |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: PAGE_DELETED; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: PAGE_DELETED; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: page list without page-b; result: page list of an earlier strategy life.
 
 ## sending in attempt 1
 
@@ -309,7 +314,8 @@ Starts as: sending in 1.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -360,7 +366,8 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list, until 2026-11-20T12:00:00.600Z; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list, until 2026-11-20T12:00:00.600Z; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list, until 2026-11-20T12:00:00.600Z; page list owed; defers page-a for the page list |
@@ -412,7 +419,8 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), awaiting a result for the page list; page list owed; defers page-a for the page list |
@@ -440,7 +448,8 @@ Starts as: needs user: RejectedByServer(revision_mismatch).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -468,7 +477,8 @@ Starts as: needs user: FailedOnServer(INTERNAL_ERROR).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -496,7 +506,8 @@ Starts as: needs user: refused because its page was deleted.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -549,7 +560,8 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -577,7 +589,8 @@ Starts as: needs user: written more than 29 days ago, too long to check against 
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -631,7 +644,8 @@ Starts as: needs user: retries exhausted.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -658,7 +672,8 @@ Starts as: needs user: page delete held (pageChanged).
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
@@ -684,7 +699,8 @@ Starts as: needs user: oversized.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -711,7 +727,8 @@ Starts as: needs user: changed by someone else since the user saw it.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | stops drawing del as landed |
 | result: page-a with the item as this device wrote it at 2 | stops drawing del as landed |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -737,12 +754,13 @@ Starts as: needs user: its page is gone.
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | x: waiting, awaiting a result for ElementTarget(e1) |
-| result: page-a with the item at revision 2 | page list owed; defers page-a for the page list |
-| result: page-a with the item as this device wrote it at 2 | page list owed; defers page-a for the page list |
-| result: page-b gone | page-b not read this session |
+| result: page-a with the item at revision 2 | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; defers page-a for the page list |
+| result: page-a with the item as this device wrote it at 2 | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; defers page-a for the page list |
+| result: page-b not found | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; page-b not read this session |
+| result: page list without page-b | x: waiting, awaiting a result for ElementTarget(e1) |
 | result: strategy gone | standing deletedOnServer |
-| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
-| result: page-a of another life | page list owed; defers page-a for the page list |
+| result: page list the store would not keep | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list refused: ResultWithoutLife(page-a) |
+| result: page-a of another life | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-b not read this session; stops drawing first as landed; sets 1 aside |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: PAGE_DELETED; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
@@ -765,7 +783,8 @@ Starts as: retired format.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | page list owed; defers page-a for the page list |
@@ -791,7 +810,8 @@ Starts as: waiting.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | unchanged |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
@@ -819,7 +839,8 @@ Starts as: waiting.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
@@ -846,7 +867,8 @@ Starts as: waiting.
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
-| result: page-b gone | page-b not read this session |
+| result: page-b not found | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; page-b not read this session |
+| result: page list without page-b | unchanged |
 | result: strategy gone | standing deletedOnServer |
 | result: page list the store would not keep | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list refused: ResultWithoutLife(page-a) |
 | result: page-a of another life | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |

@@ -124,9 +124,12 @@ final class Retiring {
     for (final work in cloud.queue.landed) {
       final page = switch (targetOf(work.op)) {
         StrategyTarget() || PageTarget() || SettingsTarget() => list,
-        final row => pagesNeeded(work.op).firstOrNull ??
-            cloud.queue.shown.rows[row]?.page ??
-            list,
+        final row => switch (pagesNeeded(work.op).firstOrNull ??
+              cloud.queue.shown.rows[row]?.page) {
+            final page? when !cloud.queue.shown.trashed.containsKey(page) =>
+              page,
+            _ => list,
+          },
       };
       (byPage[page] ??= {}).add((work.attempt, work.position));
     }

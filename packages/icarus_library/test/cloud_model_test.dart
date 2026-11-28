@@ -1714,6 +1714,19 @@ final class Model {
               ...lineupGroups,
             ],
           ),
+        PageGone(:final pagePublicId)
+            when !client.queue.shown.knownPages.contains(pagePublicId) =>
+          StrategyRowSet(
+            strategy: client.base.strategy,
+            pages: client.base.pages.where(
+              (page) => page.publicId != pagePublicId,
+            ),
+            settings: client.base.settings.where(
+              (row) => row.pagePublicId != pagePublicId,
+            ),
+            elements: client.base.elements,
+            lineupGroups: client.base.lineupGroups,
+          ),
         HeaderRead() || PageGone() || StrategyGone() => client.base,
       };
     }

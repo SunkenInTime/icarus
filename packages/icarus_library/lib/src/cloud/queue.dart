@@ -1863,7 +1863,9 @@ ResultFit? _pageFitAgainstList(Shown shown, ArrivedBase base, Arrival arrival) {
   if (page == null || shown.listTaken == null) return null;
   final held = shown.existenceOf(page);
   if (shown.listTaken == arrival.order) {
-    return held == claim ? null : ResultFit.differsFromList;
+    return held == claim || (base is PageGone && held == PageExistence.trashed)
+        ? null
+        : ResultFit.differsFromList;
   }
   if (!shown.listIsNewerThan(arrival)) return null;
   if (base is PageGone || held == PageExistence.absent) return ResultFit.older;
@@ -1987,7 +1989,12 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   for (final work in [...edit.landed]) {
     if (!_alreadyShown(edit.shown, work) &&
         (edit.strategy.presence == Presence.gone ||
-            !_goneSince(edit.shown, work))) {
+            !_goneSince(
+              edit.shown,
+              work,
+              heldOn:
+                  before.rows[targetOf(work.op)]?.page ?? work.produced?.page,
+            ))) {
       continue;
     }
     edit.landed.remove(work);
@@ -2146,9 +2153,11 @@ bool _alreadyShown(Shown shown, LandedWork work) {
   return _ownDelete(work) ? shownAt > work.version : shownAt >= work.version;
 }
 
-bool _goneSince(Shown shown, LandedWork work) {
-  final page = _namedPage(work.op);
-  if (page == null || shown.knownPages.contains(page)) return false;
+bool _goneSince(Shown shown, LandedWork work, {String? heldOn}) {
+  final page =
+      _namedPage(work.op) ??
+      (shown.trashed.containsKey(heldOn) ? heldOn : null);
+  if (page == null || shown.pages.containsKey(page)) return false;
   final answered = work.answeredAt;
   final own = shown.pagesSeen[page];
   final ownSaysGone = switch (own) {
@@ -2613,11 +2622,12 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
 }
 
 bool _pageGone(Shown shown, String page) =>
-    (shown.goneThisSession.contains(page) && shown.pageCurrent(page)) ||
-    (shown.listCurrentFor(page) &&
-        !shown.pages.containsKey(page) &&
-        (shown.highest.containsKey(PageTarget(page)) ||
-            shown.goneThisSession.contains(page)));
+    !shown.trashed.containsKey(page) &&
+    ((shown.goneThisSession.contains(page) && shown.pageCurrent(page)) ||
+        (shown.listCurrentFor(page) &&
+            !shown.pages.containsKey(page) &&
+            (shown.highest.containsKey(PageTarget(page)) ||
+                shown.goneThisSession.contains(page))));
 
 bool _deletes(StrategyOp op) =>
     op is ElementDeleteOp || op is LineupGroupDeleteOp;
@@ -2644,6 +2654,9 @@ _Verdict _wholeBehindOwn(
   };
   if (page != null && _pageGone(shown, page)) {
     return const _AskUser(RowPageGone());
+  }
+  if (page != null && shown.awaitsListVerdict(page)) {
+    return const _AwaitRow(null);
   }
   final renumbering =
       row is PageTarget &&
@@ -2862,16 +2875,25 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
     serverTime: point.serverTime,
   );
   _resultsStale(edit, entry, sent.op, point, answer);
-  void landed(int revision, {required int? life, required bool ours}) =>
-      _landed(
-        edit,
-        entry,
-        sent,
-        revision,
-        life: life,
-        ours: ours,
-        answeredAt: answeredAt,
-      );
+  void landed(int revision, {required int? life, required bool ours}) {
+    _landed(
+      edit,
+      entry,
+      sent,
+      revision,
+      life: life,
+      ours: ours,
+      answeredAt: answeredAt,
+    );
+    if (entry.op case PageDeleteOp(
+      :final pagePublicId,
+    ) when edit.shown.pages.containsKey(pagePublicId)) {
+      final left = edit.shown.notLive(pagePublicId, edit.orderOf(point));
+      edit.shown = left.shown;
+      edit.decisions.addAll(left.decisions);
+    }
+  }
+
   switch (answer) {
     case AppliedAnswer(:final revision, :final life):
       landed(revision, life: life, ours: true);

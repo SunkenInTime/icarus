@@ -685,6 +685,8 @@ void main() {
           world.sender.owesFreshRead(strategyId, openPage);
         });
         final live = after((world) {
+          world.server.overrideRead =
+              (call) => call.page == pageId ? refused(world) : null;
           world.sender
             ..liveOpened(strategyId, openPage)
             ..liveArrived(strategyId, openPage, servedAccount, refused(world));

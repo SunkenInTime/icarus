@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
+import 'cloud_server.dart' show withoutPage;
 import 'cloud_support.dart';
 import 'support.dart';
 
@@ -287,7 +288,9 @@ final rows = <Row>[
       ),
     );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
-    return client..arrive(const PageGone('page-a'));
+    return client
+      ..arrive(const PageGone('page-a'))
+      ..arrive(headerReadOf(withoutPage(initialRows(), 'page-a')));
   }),
   Row('a format this build no longer sends', () {
     final client = Client();
@@ -450,8 +453,13 @@ final events = <String, QueueEvent Function(Client)>{
     session: c.queue.session.number - 1,
     point: tick(),
   ),
-  'result: page-b gone': (c) => BaseArrived(
+  'result: page-b not found': (c) => BaseArrived(
     const PageGone('page-b'),
+    session: c.queue.session.number,
+    point: tick(),
+  ),
+  'result: page list without page-b': (c) => BaseArrived(
+    headerReadOf(withoutPage(initialRows(), 'page-b')),
     session: c.queue.session.number,
     point: tick(),
   ),
@@ -714,11 +722,15 @@ String renderTable() {
       'landed, in the order the server applied it, off its source page and '
       'on its destination, until a result shows that row at the answered '
       'revision or later, or until a result about the page its op names, at '
-      'or after its answer by order and server time, shows that page gone: '
-      'that page\'s own page-gone, or a list newer than the page\'s own '
-      'result that no longer has it. An item edit that names no page is not '
-      'retired this way, as an answer names a revision and not where the row '
-      'is. A result about another page never retires work, and while the '
+      'or after its answer by order and server time, shows that page no '
+      'longer live: that page\'s own not-found read, or a list newer than '
+      'the page\'s own result that lists it in the trash or not at all. Work '
+      'on a page the store holds in the trash waits for the page list, not '
+      'a read of the page, which can only answer not found. An item edit '
+      'that names no page is retired this way only when a result puts the page '
+      'the store held its row on in the trash, as an answer names a revision '
+      'and not where the row is. A result about another page never retires '
+      'work, and while the '
       'strategy itself is gone nothing retires. A delete this device made '
       'stays known as its own until a result shows a later revision of the '
       'row or its page is gone that way. '

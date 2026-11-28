@@ -65,10 +65,10 @@ Future<String> storeAdd(
   final store = _storeOf(c);
   final strategyId = storedCloudStrategy(c);
   final read = await store.readStrategy(strategyId);
-  if (read is! Found<StrategyContent> || read.value.pages.isEmpty) {
-    throw StateError('the store holds no page of $strategyId: $read');
+  if (read is! Found<StrategyContent> || _livePages(read.value).isEmpty) {
+    throw StateError('the store holds no live page of $strategyId: $read');
   }
-  final page = read.value.pages.first.publicId;
+  final page = _livePages(read.value).first.publicId;
   final position = Offset(at.$1, at.$2);
   final PageItem item = switch (kind) {
     'agent' => AgentItem(
@@ -102,6 +102,10 @@ Future<String> storeAdd(
       '$strategyId at (${at.$1}, ${at.$2})';
 }
 
+List<LivePage> _livePages(StrategyContent content) =>
+    content.pages.whereType<LivePage>().toList()
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
 Future<String> storeAddPage(ProviderContainer c) async {
   final store = _storeOf(c);
   final strategyId = storedCloudStrategy(c);
@@ -112,7 +116,7 @@ Future<String> storeAddPage(ProviderContainer c) async {
   final op = PageAddOp(
     opId: const Uuid().v4(),
     pagePublicId: const Uuid().v4(),
-    sortIndex: read.value.pages.length,
+    sortIndex: _livePages(read.value).length,
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
@@ -336,9 +340,11 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
   if (read is! Found<StrategyContent>) {
     throw StateError('the store could not read $strategyId: $read');
   }
-  final pages = read.value.pages;
+  final pages = _livePages(read.value);
   if (index >= pages.length) {
-    throw StateError('$strategyId has ${pages.length} pages, no page $index');
+    throw StateError(
+      '$strategyId has ${pages.length} live pages, no page $index',
+    );
   }
   final page = pages[index].publicId;
   final op = PageDeleteOp(

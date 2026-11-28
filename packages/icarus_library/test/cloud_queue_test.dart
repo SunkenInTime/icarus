@@ -2358,8 +2358,9 @@ void main() {
       expect(drawn.element('e1')?.pagePublicId, 'page-b');
     });
 
-    test('an edit waiting for a row\'s result needs the user when its page is '
-        'gone', () {
+    test('an edit waiting for a row\'s result waits for the page list once its '
+        'page reads not found, and needs the user when the list shows the '
+        'page gone', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -2377,11 +2378,18 @@ void main() {
       client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
       expect(client.view('whole').sendable, isFalse);
       client.arrive(const PageGone('page-a'));
+      expect(stateOf(client, 'whole'), isNot(isA<NeedsUser>()));
+      expect(
+        client.view('whole').holds,
+        contains(awaitingResult(const PageListResult())),
+      );
+      client.arrive(headerReadOf(withoutPage(server.rows, 'page-a')));
       expect(stateOf(client, 'whole'), const NeedsUser(RowPageGone()));
     });
 
-    test('a rename of a new page needs the user when a page list leaves the '
-        'page out', () {
+    test('a rename of a new page goes for the server to judge while a page '
+        'list holds the page in the trash, and needs the user when a page '
+        'list leaves the page out', () {
       final server = Server();
       final client = online();
       client.edit(pageAdd('add', 'page-c', expected: 1, sortIndex: 2));
@@ -2397,11 +2405,14 @@ void main() {
           ),
         ),
       );
-      server.rows = withOp(
+      final trashed = withOp(
         server.rows,
         pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
       );
-      client.arrive(headerReadOf(server.rows));
+      client.arrive(headerReadOf(trashed));
+      expect(stateOf(client, 'rename'), isNot(isA<NeedsUser>()));
+      expect(client.view('rename').sendable, isTrue);
+      client.arrive(headerReadOf(withoutPage(trashed, 'page-c')));
       expect(stateOf(client, 'rename'), const NeedsUser(RowPageGone()));
     });
 
@@ -3112,14 +3123,18 @@ void main() {
       });
     });
 
-    test('a page result saying the page is gone, newer than the page list '
-        'that shows it, decides the page is gone: the delete goes', () {
+    test('a page result saying the page is not found, newer than the page '
+        'list that shows it, owes the list, and the list decides: the delete '
+        'goes once it shows the page gone', () {
       final client = Client()..read(initialRows());
       client.must(reconnected());
       client.edit(pageDelete('del', 'page-b'));
       client.arrive(headerReadOf(initialRows()));
       client.arrive(const PageGone('page-b'));
       expect(client.queue.shown.pages, isNot(contains('page-b')));
+      expect(client.queue.shown.list, isA<ReadOwed>());
+      expect(client.view('del').sendable, isFalse);
+      client.arrive(headerReadOf(withoutPage(initialRows(), 'page-b')));
       expect(
         pageDeleteVerdict(
           client.queue.shown,

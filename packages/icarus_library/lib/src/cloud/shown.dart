@@ -861,6 +861,12 @@ final class Taken {
   final List<RowDecision> decisions;
   final Set<String> differing;
 
+  Taken after(Taken earlier) => Taken(
+    shown,
+    [...earlier.decisions, ...decisions],
+    differing: {...earlier.differing, ...differing},
+  );
+
   @override
   bool operator ==(Object other) =>
       other is Taken &&
@@ -1143,6 +1149,13 @@ final class Shown {
 
   Set<String> get knownPages => {...pages.keys, ...trashed.keys};
 
+  bool awaitsListVerdict(String page) =>
+      isDebt(list) &&
+      pagesSeen[page]?.gone == true &&
+      !pages.containsKey(page) &&
+      !trashed.containsKey(page) &&
+      !goneThisSession.contains(page);
+
   PageExistence existenceOf(String page) => pages.containsKey(page)
       ? PageExistence.live
       : trashed.containsKey(page)
@@ -1153,6 +1166,52 @@ final class Shown {
     (final list?, final arrival?) => arrival.order.isBefore(list),
     _ => false,
   };
+
+  Taken notLive(String page, ResultOrder? at) {
+    final left = _with(
+      pageReads: {...pageReads}..remove(page),
+      pages: {...pages}..remove(page),
+      settings: {...settings}..remove(page),
+      content: {...content}..remove(page),
+    );
+    final owing = switch (at) {
+      final at? => left.owingListAlso(ResultAtOrAfter(at)),
+      null => left,
+    };
+    return owing.toTheTrash([page], at).after(Taken(owing, [PageLeft(page)]));
+  }
+
+  Taken toTheTrash(Iterable<String> pages, ResultOrder? at) {
+    final leaving = {
+      for (final page in pages)
+        if (content.containsKey(page) ||
+            pageReads.containsKey(page) ||
+            rows.values.any((row) => row.page == page))
+          page,
+    };
+    if (leaving.isEmpty) return Taken(this, const []);
+    return Taken(
+      _with(
+        content: {
+          for (final MapEntry(:key, :value) in content.entries)
+            if (!leaving.contains(key)) key: value,
+        },
+        pageReads: {
+          for (final MapEntry(:key, :value) in pageReads.entries)
+            if (!leaving.contains(key)) key: value,
+        },
+        tombstones: _removedOn(leaving.contains, at),
+        rows: {
+          for (final MapEntry(:key, :value) in rows.entries)
+            if (!leaving.contains(value.page)) key: value,
+        },
+      ),
+      [
+        for (final MapEntry(:key, :value) in rows.entries)
+          if (leaving.contains(value.page)) ItemLeft(key, page: value.page),
+      ],
+    );
+  }
 
   Map<Target, Removed> _removedOn(
     bool Function(String page) gone,
@@ -1201,16 +1260,31 @@ final class Shown {
     required Arrival? arrival,
   }) => switch (result) {
     HeaderRead() => _withList(result, arrival),
-    PageRead(:final page, :final elements, :final lineupGroups) => _checkedTake(
-      page.publicId,
-      (reuse) => _withPage(
-        page,
-        [...elements, ...lineupGroups],
-        paid: paidBy(pageRead(page.publicId), arrival, result),
-        arrival: arrival,
-        reuse: reuse,
-      ),
-    ),
+    PageRead(:final page, :final elements, :final lineupGroups) =>
+      switch (_checkedTake(
+        page.publicId,
+        (reuse) => _withPage(
+          page,
+          [...elements, ...lineupGroups],
+          paid: paidBy(pageRead(page.publicId), arrival, result),
+          arrival: arrival,
+          reuse: reuse,
+        ),
+      )) {
+        final read when read.shown.trashed.containsKey(page.publicId) =>
+          read.shown.toTheTrash([page.publicId], arrival?.order).after(read),
+        final read => read,
+      },
+    PageGone(:final pagePublicId) when trashed.containsKey(pagePublicId) =>
+      _with(
+        pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
+        pagesSeen: {...pagesSeen, pagePublicId: Seen(arrival, gone: true)},
+        pageReads: {...pageReads}..remove(pagePublicId),
+      ).toTheTrash([pagePublicId], arrival?.order),
+    PageGone(:final pagePublicId) when pages.containsKey(pagePublicId) => _with(
+      pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
+      pagesSeen: {...pagesSeen, pagePublicId: Seen(arrival, gone: true)},
+    ).notLive(pagePublicId, arrival?.order),
     PageGone(:final pagePublicId) => Taken(
       _with(
         pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
@@ -1253,6 +1327,10 @@ final class Shown {
         return true;
       }
       if (PageExistence.of(listedRows[page]) == existenceOf(page)) return true;
+      if (listedRows[page] case final row?
+          when _isTrashed(row) && pagesSeen[page]?.gone == true) {
+        return true;
+      }
       if (own == arrival.order) differing.add(page);
       return false;
     }
@@ -1315,7 +1393,11 @@ final class Shown {
               : RowKept(row, KeptBecause.heldIsNewer),
     ]);
     final live = nextPages.keys.toSet();
-    return Taken(
+    final listedInTheTrash = [
+      for (final page in nextTrashed.keys)
+        if (decides[page]!) page,
+    ];
+    final taken = Taken(
       Shown(
         fence: fence,
         listTaken: arrival?.order ?? listTaken,
@@ -1380,6 +1462,9 @@ final class Shown {
       decisions,
       differing: differing,
     );
+    return taken.shown
+        .toTheTrash(listedInTheTrash, arrival?.order)
+        .after(taken);
   }
 
   static Map<Target, Version> _raised(
