@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/json.dart' show canonicalJson;
 import 'package:test/test.dart';
 
 import 'store_support.dart';
@@ -132,6 +134,40 @@ void main() {
       await reopened.close();
     },
   );
+
+  test('a strategy listed in another folder than its own row says is listed '
+      'where the row says after a move there, though the row already says '
+      'so', () async {
+    final storage = MemoryStorage();
+    final filling = await openStore(MemoryEngine(storage));
+    savedValue(
+      await filling.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'folder-a', name: 'A')),
+        PutFolder(ReadableFolder(publicId: 'folder-b', name: 'B')),
+        AddStrategy(sampleStrategy()),
+        const MoveStrategy(strategyId, 'folder-b'),
+      ]),
+    );
+    await filling.close();
+    final contents = editable(storage.contents);
+    final name = summaryName(strategyId);
+    contents['library']![name] = canonicalJson({
+      ...jsonDecode(contents['library']![name]!) as Map<String, Object?>,
+      'folderPublicId': 'folder-a',
+    });
+    final disk = MemoryStorage(contents);
+    final store = await openStore(MemoryEngine(disk));
+    expect(_listed(store, strategyId).folderPublicId, 'folder-a');
+
+    savedValue(
+      await store.editLibrary([const MoveStrategy(strategyId, 'folder-b')]),
+    );
+    await store.close();
+
+    final reopened = await openOn(disk.contents);
+    expect(_listed(reopened, strategyId).folderPublicId, 'folder-b');
+    await reopened.close();
+  });
 
   test('renaming a strategy back to its stored name in the same edit writes '
       'nothing', () async {

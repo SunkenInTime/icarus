@@ -2574,6 +2574,10 @@ final class _LibraryEdit {
       KeepValue() => current.folderPublicId,
     };
     if (current.name == targetName && current.folderPublicId == targetFolder) {
+      if (summary.name != current.name ||
+          summary.folderPublicId != current.folderPublicId) {
+        _putSummary(summary.withHeader(current));
+      }
       return const _Next();
     }
     final added = _added[strategyPublicId];
