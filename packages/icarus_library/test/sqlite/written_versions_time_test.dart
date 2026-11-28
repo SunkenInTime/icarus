@@ -37,7 +37,16 @@ void main() {
       final watch = Stopwatch()..start();
       final read = await store.writtenOf(ids);
       times.add(watch.elapsed);
-      expect(read, isA<Done<Map<String, StrategyWritten>>>());
+      expect(
+        read,
+        isA<Done<Map<String, StrategyWritten>>>().having(
+          (done) => done.value.values.whereType<WrittenAt>().map(
+            (written) => written.version,
+          ),
+          'versions',
+          List.filled(_strategies, 40),
+        ),
+      );
     }
     times.sort();
     printOnFailure('read times: ${times.map((t) => t.inMicroseconds)} µs');

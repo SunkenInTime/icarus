@@ -1179,7 +1179,10 @@ summary and nothing else. They read its own row and the names in its area,
 which say whether it is kept in the cloud, and never its pages, settings or
 items, so a strategy with damaged rows can still be moved and renamed, and
 those rows stay exactly as stored. A strategy whose own row cannot be read
-is refused both. `test/store_header_changes_test.dart` holds both to that.
+is refused both. Two cases read the whole strategy, to rebuild its summary
+first: one with no summary, and one whose summary says it is in the cloud
+while the names say it is kept here. `test/store_header_changes_test.dart`
+holds both changes to that.
 `writtenOf(ids)` reads the version each strategy was written at
 (`written`), and nothing else, for many strategies in one turn:
 `WrittenAt`, `WrittenNotRecorded` or `WrittenUnreadable`.

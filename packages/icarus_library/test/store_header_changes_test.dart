@@ -159,11 +159,11 @@ void main() {
   });
 
   test('removing a strategy that is not in the store is refused as no such '
-      'strategy, and removing one with rows but no header is refused as '
-      'not readable', () async {
+      'strategy, and removing one with rows but no header is refused with a '
+      'reference that removes it', () async {
     final noHeader = editable(await seededClean());
     noHeader[sampleArea]!.remove('strategy');
-    final (store, counts, _) = await _countedOn(noHeader);
+    final (store, counts, storage) = await _countedOn(noHeader);
 
     expect(
       await store.editLibrary([const RemoveStrategy('never-there')]),
@@ -173,16 +173,36 @@ void main() {
         isA<NoSuchStrategy>(),
       ),
     );
-    expect(
-      await store.editLibrary([const RemoveStrategy(strategyId)]),
-      isA<Refused<LibraryEdited, LibraryRefusal>>().having(
-        (refused) => refused.reason,
-        'reason',
-        isA<StrategyNotReadable>(),
-      ),
-    );
+    final refusal = switch (await store.editLibrary([
+      const RemoveStrategy(strategyId),
+    ])) {
+      Refused(reason: final StrategyNotReadable refusal) => refusal,
+      final other => fail('$other'),
+    };
     expect(counts.deleted, isEmpty);
+
+    savedValue(
+      await store.editLibrary([RemoveUnreadableStrategy(refusal.ref)]),
+    );
     await store.close();
+    expect(storage.contents[sampleArea] ?? const {}, isEmpty);
+  });
+
+  test('a strategy with no summary is renamed from a summary rebuilt from its '
+      'rows, the one header change that reads them', () async {
+    final noSummary = editable(await seededClean());
+    noSummary['library']!.remove(summaryName(strategyId));
+    final (store, counts, storage) = await _countedOn(noSummary);
+
+    savedValue(
+      await store.editLibrary([const RenameStrategy(strategyId, 'Renamed')]),
+    );
+
+    expect(counts.entryListings, isNotEmpty);
+    await store.close();
+    final reopened = await openOn(storage.contents);
+    expect(_listed(reopened, strategyId).name, 'Renamed');
+    await reopened.close();
   });
 
   test('the written versions are read for every strategy asked, newer, missing '
