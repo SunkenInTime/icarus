@@ -29,9 +29,12 @@ final class UnitHarness {
   }
 }
 
+final _unitHives = <Directory>[];
+
 Future<Directory> openUnitHive() async {
   CoordinateSystem(playAreaSize: const Size(1920, 1080));
   final directory = await Directory.systemTemp.createTemp('icarus-units-');
+  _unitHives.add(directory);
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
     const MethodChannel('plugins.flutter.io/path_provider'),
@@ -48,6 +51,14 @@ Future<Directory> openUnitHive() async {
   await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
   await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
   return directory;
+}
+
+Future<void> closeUnitHive() async {
+  await Hive.close();
+  for (final directory in [..._unitHives]) {
+    _unitHives.remove(directory);
+    if (await directory.exists()) await directory.delete(recursive: true);
+  }
 }
 
 Future<UnitHarness> openInEditor(

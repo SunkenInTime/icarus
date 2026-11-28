@@ -197,7 +197,7 @@ void main() {
   setUp(openUnitHive);
   tearDown(() async {
     LocalLibrary.source = const LibraryInHive();
-    await Hive.close();
+    await closeUnitHive();
   });
 
   Future<LibraryStore> moved(StorageEngine engine) async {
