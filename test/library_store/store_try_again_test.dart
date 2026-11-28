@@ -1,3 +1,6 @@
+@Timeout(Duration(minutes: 2))
+library;
+
 import 'dart:async';
 import 'dart:io';
 
@@ -49,6 +52,13 @@ List<String> _lossReports() => [
         if (entry.source == 'libraryStore.lostAnswer') entry.message,
     ];
 
+final class _Counted {
+  int opens = 0;
+  int served = 0;
+
+  void Function() get serve => () => served++;
+}
+
 final class _NotLeased implements StorageEngine {
   const _NotLeased(this.leasing);
 
@@ -84,8 +94,7 @@ void main() {
   late Directory directory;
   late CommitGate gate;
   late ProviderContainer container;
-  late int opens;
-  late int served;
+  late _Counted counted;
   late Leasing? firstLease;
   late FakeServer server;
 
@@ -94,8 +103,7 @@ void main() {
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put('a', _strategy('a'));
     gate = CommitGate();
-    opens = 0;
-    served = 0;
+    final counts = counted = _Counted();
     firstLease = null;
     server = FakeServer()
       ..owners[strategyId] = servedAccount
@@ -108,7 +116,7 @@ void main() {
         authProvider.overrideWith(_SignedOut.new),
         libraryStoreProvider.overrideWith(
           () => LibraryStoreNotifier(
-            wrapEngine: (engine) => switch ((++opens, firstLease)) {
+            wrapEngine: (engine) => switch ((++counts.opens, firstLease)) {
               (1, final refused?) => _NotLeased(refused),
               _ => GatedEngine(engine, gate),
             },
@@ -153,7 +161,7 @@ void main() {
       allowsLocalLibrary: true,
       build: 'b',
       bringUpToDate: () async {},
-      servedAgain: () => served++,
+      servedAgain: counted.serve,
       firstFrame: Future.value(),
     );
     expect(onStore(), isA<LibraryServedFromStore>());
@@ -209,8 +217,8 @@ void main() {
       await (onStore()! as LibraryNotServed).tryAgain();
 
       expect(onStore(), isA<LibraryServedFromStore>());
-      expect(opens, 2);
-      expect(served, 1);
+      expect(counted.opens, 2);
+      expect(counted.served, 1);
       expect(shown(), landed ? ['a', 'c'] : ['a']);
       expect(await const LocalLibrary().addStrategy(_strategy('c')),
           isA<LibraryWritten>());
@@ -225,8 +233,8 @@ void main() {
 
     await Future.wait([notServed.tryAgain(), notServed.tryAgain()]);
 
-    expect(opens, 2);
-    expect(served, 1);
+    expect(counted.opens, 2);
+    expect(counted.served, 1);
     expect(onStore(), isA<LibraryServedFromStore>());
   });
 
@@ -273,7 +281,7 @@ void main() {
     ]);
     expect(held.isOpen, isFalse);
     expect(store().isOpen, isTrue);
-    expect(opens, 3);
+    expect(counted.opens, 3);
     expect(onStore(), isA<LibraryServedFromStore>());
     expect(shown(), ['a', 'lost', 'w']);
   });
@@ -379,7 +387,7 @@ void main() {
         allowsLocalLibrary: true,
         build: 'b',
         bringUpToDate: () async {},
-        servedAgain: () => served++,
+        servedAgain: counted.serve,
         firstFrame: Future.value(),
       );
       beginCloudSender(
