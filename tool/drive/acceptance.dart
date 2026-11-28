@@ -73,6 +73,18 @@ final class _Plan {
   Set<String> get storeOnly =>
       (json['storeOnly']! as List).cast<String>().toSet();
 
+  Map<String, int> get slow => {
+        for (final MapEntry(key: name, value: entry)
+            in ((json['slow'] ?? const {}) as Map<String, Object?>).entries)
+          name: switch (entry) {
+            {'seconds': final int seconds, 'because': final String _} =>
+              seconds,
+            _ => throw _UsageError(
+                'acceptance.json gives $name as slow without whole seconds '
+                'and a reason'),
+          },
+      };
+
   Map<String, Map<String, Object?>> get starts =>
       (json['starts']! as Map<String, Object?>)
           .cast<String, Map<String, Object?>>();
@@ -179,6 +191,12 @@ AcceptanceSet acceptanceSet(Directory repo, {required bool onWindows}) {
     for (final name in scripts)
       if (!leftOut.containsKey(name)) name,
   ];
+  for (final name in plan.slow.keys) {
+    if (!scripts.contains(name)) {
+      throw _UsageError('acceptance.json gives $name as slow, which is not a '
+          'script that never signs in');
+    }
+  }
   final starts = {for (final name in set) name: _Start.of(plan.starts[name])};
   for (final MapEntry(key: name, value: start) in starts.entries) {
     if (start.before case final before? when !set.contains(before)) {
@@ -365,6 +383,10 @@ Future<int> _accept(Map<String, String> options) async {
                   '-Out',
                   runOut,
                   if (hiveStore != null) ...['-HiveStore', hiveStore],
+                  if (plan.slow[name] case final seconds?) ...[
+                    '-TimeoutSeconds',
+                    '$seconds',
+                  ],
                   if (closes) ...['-EndsBy', 'close'],
                   if (closes)
                     if (plan.closingExitNotJudgedOnWindows case final why?) ...[
@@ -387,6 +409,10 @@ Future<int> _accept(Map<String, String> options) async {
                   runOut,
                   if (hiveStore != null) ...['--hive-store', hiveStore],
                   if (options['exe'] case final exe?) ...['--exe', exe],
+                  if (plan.slow[name] case final seconds?) ...[
+                    '--timeout-seconds',
+                    '$seconds',
+                  ],
                   if (closes) ...['--ends-by', 'close'],
                 ],
                 workingDirectory: repo.path,
