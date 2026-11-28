@@ -1448,9 +1448,8 @@ Future<bool> _holdsNothingFor(
   CloudQueue queue,
 ) async =>
     !owedReads(queue).contains(PageResult(pageId)) &&
-    switch (await store.heldOnPage(strategyId, pageId)) {
-      Found(value: HeldOnPage(:final elements, :final lineupGroups)) =>
-        elements.isEmpty && lineupGroups.isEmpty,
+    switch (await store.storesAnythingOnPage(strategyId, pageId)) {
+      Done(value: false) => true,
       _ => false,
     };
 

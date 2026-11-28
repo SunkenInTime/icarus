@@ -1194,6 +1194,22 @@ final class LibraryStore {
         };
       });
 
+  Future<Stored<bool>> storesAnythingOnPage(
+    String strategyPublicId,
+    String pagePublicId,
+  ) => _inTurn(() async {
+    if (_settle() case StorageFailed(:final failure)) {
+      return StorageFailed(failure);
+    }
+    return switch (await _lease.keys(
+      strategyArea(strategyPublicId),
+      pageContentPrefix(digestOf(pagePublicId)),
+    )) {
+      Done(:final value) => Done(value.isNotEmpty),
+      StorageFailed(:final failure) => StorageFailed(failure),
+    };
+  });
+
   Future<Reading<HeldOnPage>> heldOnPage(
     String strategyPublicId,
     String pagePublicId,

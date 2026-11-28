@@ -151,8 +151,9 @@ void main() {
     });
 
     test(
-        'a page watch the replaced sender knew of is known to the sender of '
-        'the reopened store: the quiet page is read once', () {
+        'a page watch opened while the old sender still waited for its first '
+        'answer is known to the sender of the reopened store: the quiet page '
+        'is read once, by the new sender', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       final live = LiveResultsToSender();
@@ -162,21 +163,18 @@ void main() {
           world.secondPageOnServer();
           world.sender.adopt(strategyId);
           world.settle();
-          world.server.overrideRead = (call) => call.page == 'p2'
-              ? const StoreReadLost(
-                  TransportFailure.network, 'held by the test')
-              : null;
+          final from = world.server.readCalls.length;
           live
             ..attach(world.sender)
             ..liveOpened(strategyId, shown);
           world.settle();
+          expect(pageReads(world, from), isEmpty);
           live.detach(world.sender);
         },
         storage: storage,
         server: server,
         addStrategy: false,
       );
-      server.overrideRead = null;
       inWorld(
         (world) {
           final from = world.server.readCalls.length;

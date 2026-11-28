@@ -127,7 +127,8 @@ void main() {
       'the editor in send mode on today\'s path, as the transport sees it: a '
       'first open reads and watches the page list and the shown page, and '
       'the store reads the list and no page; a later open the editor\'s four; a page read and '
-      'watched one read and one watch; an edit one send; and every watch '
+      'watched one read and one watch, whose answer the store takes; an '
+      'edit one send; and every watch '
       'closed once the editor is gone', () {
     inWorld(
       (world) {
@@ -164,6 +165,8 @@ void main() {
         final watchesAfterOpens = server.openWatches;
         final subscriptions = container.read(editorSubscriptionsProvider);
         StreamSubscription<Object>? p2Watch;
+        final heldBeforeSwitch = world.cloud().queue.shown.content.keys.toSet();
+        final takenBeforeSwitch = world.sender.liveTaken;
         final switched = _during(world, server, () {
           unawaited(subscriptions
               .readPage(strategyPublicId: strategyId, pagePublicId: 'p2')
@@ -172,6 +175,8 @@ void main() {
                   .listen((_) {})));
         });
         final watchesAfterSwitch = server.openWatches;
+        final heldAfterSwitch = world.cloud().queue.shown.content.keys.toSet();
+        final takenBySwitch = world.sender.liveTaken - takenBeforeSwitch;
 
         final edit = _during(world, server, () => world.commitMove(1));
 
@@ -192,6 +197,9 @@ void main() {
           'subscribeStamped page:getSnapshot',
         ]);
         expect(switched.sender, isEmpty);
+        expect(heldBeforeSwitch, isNot(contains('p2')));
+        expect(heldAfterSwitch, contains('p2'));
+        expect(takenBySwitch, 1);
         expect(edit.editor, isEmpty);
         expect(edit.sender, ['send move-1']);
         expect((watchesAfterOpens, watchesAfterSwitch), (2, 3));

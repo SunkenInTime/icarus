@@ -233,6 +233,38 @@ void main() {
     await store.close();
   });
 
+  test(
+      'a page holding only a row of a kind this build cannot read is never '
+      'skipped: it has no verdict, and the run fails', () async {
+    final storage = MemoryStorage();
+    await (await storeHoldingTheFirstOfTwoPages(storage)).close();
+    final contents = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    contents[strategyArea(serverRows().strategy.publicId)]![
+            'content/${digestOf('p2')}/z/${digestOf('a-newer-kind')}'] =
+        '{"kind":"newer"}';
+    final store = await openStore(MemoryStorage(contents));
+    expect(
+      switch (await store.readPage(serverRows().strategy.publicId, 'p2')) {
+        Found(:final value) => value.content,
+        _ => null,
+      },
+      isA<ContentNotRead>(),
+    );
+    final server = servingTwoPages(serverRows());
+    final lines = await readBack(store, server.reads);
+    expect(problems(lines), [
+      allOf(
+        contains('no verdict'),
+        contains('page p2: the store holds rows or owes a read for it'),
+      ),
+    ]);
+    expect(textOf(lines), isNot(contains(contains('never held'))));
+    await store.close();
+  });
+
   test('a server read that fails is a verdict, not a thrown error', () async {
     final store = await storeHolding(serverRows());
     final lines = await readBack(
