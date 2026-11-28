@@ -936,6 +936,13 @@ final class MoveStrategy extends LibraryChange {
   final String? folderPublicId;
 }
 
+final class RenameStrategy extends LibraryChange {
+  const RenameStrategy(this.strategyPublicId, this.name);
+
+  final String strategyPublicId;
+  final String name;
+}
+
 final class PutFolder extends LibraryChange {
   const PutFolder(this.folder);
 

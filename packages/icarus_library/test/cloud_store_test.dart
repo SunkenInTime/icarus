@@ -2288,6 +2288,65 @@ void main() {
       );
 
       test('a cloud strategy whose stored summary lacks its cloud field is '
+          'still not renamed', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final name = summaryName(strategyId);
+        final json =
+            (jsonDecode(contents['library']![name]!) as Map<String, Object?>)
+              ..remove('cloud');
+        contents['library']![name] = canonicalJson(json);
+        final disk = MemoryStorage(contents);
+        store = await openCloudStore(MemoryEngine(disk));
+        final before = disk.contents;
+        expect(
+          await store.editLibrary([const RenameStrategy(strategyId, 'Renamed')]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>(),
+        );
+        expect(sameContents(before, disk.contents), isTrue);
+      });
+
+      test('a strategy kept here whose stored summary says it is in the cloud '
+          'is listed as kept here after a move', () async {
+        final cloudStorage = MemoryStorage();
+        final cloud = await openCloudStore(MemoryEngine(cloudStorage));
+        await addCloud(cloud, initialRows());
+        await cloud.close();
+        final cloudField = (jsonDecode(
+          cloudStorage.contents['library']![summaryName(strategyId)]!,
+        ) as Map<String, Object?>)['cloud'];
+        final localStorage = MemoryStorage();
+        final local = await openCloudStore(MemoryEngine(localStorage));
+        savedValue(await local.editLibrary([AddStrategy(initialRows())]));
+        await local.close();
+        final contents = editable(localStorage.contents);
+        final name = summaryName(strategyId);
+        contents['library']![name] = canonicalJson({
+          ...jsonDecode(contents['library']![name]!) as Map<String, Object?>,
+          'cloud': cloudField,
+        });
+        final disk = MemoryStorage(contents);
+        final store = await openCloudStore(MemoryEngine(disk));
+        expect(listOf(store).strategies.single.sync, isNot(isA<KeptHere>()));
+        savedValue(
+          await store.editLibrary([
+            PutFolder(ReadableFolder(publicId: 'f1', name: 'f1')),
+            const MoveStrategy(strategyId, 'f1'),
+          ]),
+        );
+        await store.close();
+
+        final reopened = await openCloudStore(MemoryEngine(disk));
+        final listed = listOf(reopened).strategies.single;
+        expect(listed.sync, isA<KeptHere>());
+        expect(listed.folderPublicId, 'f1');
+        await reopened.close();
+      });
+
+      test('a cloud strategy whose stored summary lacks its cloud field is '
           'still not filed into a folder', () async {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));

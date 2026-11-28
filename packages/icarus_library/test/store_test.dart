@@ -1928,29 +1928,30 @@ void main() {
     ]);
 
     test(
-      'moving a strategy into a folder before its rows are read saves the summary its rows give',
+      'moving a strategy into a folder before its rows are read keeps the '
+      'summary it is listed with, and reads none of its pages',
       () async {
         final disk = MemoryStorage(
           without(await seededClean(), sampleArea, [pageName('page-a')]),
         );
-        final store = await openStore(MemoryEngine(disk));
+        final (engine, counts) = counting(MemoryEngine(disk));
+        final store = await openStore(engine);
+        final before = listOf(store).strategies.single;
+        counts.reset();
         savedValue(
           await store.editLibrary([
             PutFolder(ReadableFolder(publicId: 'folder', name: 'Folder')),
             const MoveStrategy(strategyId, 'folder'),
           ]),
         );
+        expect(counts.entryListings, isEmpty);
         await store.close();
         final listed = listOf(
           await openStore(MemoryEngine(disk)),
         ).strategies.single;
         expect(listed.folderPublicId, 'folder');
-        expect(listed.pageCount, 2);
-        expect(
-          listed.readability,
-          isA<SomeUnreadable>().having((some) => some.damaged, 'damaged', 5),
-        );
-        expect(listed.toJson(), await listedAfterRebuild(disk.contents));
+        expect(listed.pageCount, before.pageCount);
+        expect(listed.readability, before.readability);
       },
     );
 

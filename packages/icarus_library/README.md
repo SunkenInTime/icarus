@@ -1173,10 +1173,27 @@ the engine applies the commit, so adding, moving or removing a strategy
 costs the same in a library of any size.
 `test/library_edit_cost_test.dart` requires the same engine work for each
 at 100 and 2,800 strategies, and `test/library_edit_time_test.dart`
-(tagged `timing`) requires the fastest of each to stay within 1.5 times. A library edit
+(tagged `timing`) requires the fastest of each to stay within 1.5 times.
+`MoveStrategy` and `RenameStrategy` change a strategy's own row and its
+summary and nothing else. They read its own row and the names in its area,
+which say whether it is kept in the cloud, and never its pages, settings or
+items, so a strategy with damaged rows can still be moved and renamed, and
+those rows stay exactly as stored. A strategy whose own row cannot be read
+is refused both. Two cases read the whole strategy, to rebuild its summary
+first: one with no summary, and one whose summary says it is in the cloud
+while the names say it is kept here. `test/store_header_changes_test.dart`
+holds both changes to that.
+`writtenOf(ids)` reads the version each strategy was written at
+(`written`), and nothing else, for many strategies in one turn:
+`WrittenAt`, `WrittenNotRecorded` or `WrittenUnreadable`. The engine has
+no read of many keys, so it asks for every version before the first answer
+comes, and `test/store_header_changes_test.dart` counts that all 700 of
+them are asked first. `test/sqlite/written_versions_time_test.dart` (tagged
+`timing`) keeps 700 within 60 ms on SQLite once warm: a tripwire for a
+tenfold regression, not a tuned target. On the PC they take about 14 ms. A library edit
 saves what differs from the stored rows when it ends: moving a strategy
-into a folder and back in one edit is `NothingToSave`, several moves of
-one strategy raise its revision once, and a strategy added in the same
+into a folder and back in one edit is `NothingToSave`, several moves or
+renames (`RenameStrategy`) of one strategy raise its revision once, and a strategy added in the same
 edit keeps its own revision. Each step sees what earlier steps staged: a
 move of a strategy the same edit removes is refused with `NoSuchStrategy`,
 and adding it back in the same edit with `StrategyAlreadyInStore`. `test/store_library_batch_test.dart` runs short
