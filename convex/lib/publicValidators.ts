@@ -207,6 +207,7 @@ export const pageListTrashedPageValidator = v.object({
   revision: v.number(),
   createdAt: v.number(),
   deletedAt: v.number(),
+  restorableUntil: v.number(),
   deletedBy: pageDeleterValidator,
 });
 

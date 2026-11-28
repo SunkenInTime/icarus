@@ -219855,6 +219855,12 @@
                     },
                     "optional": false
                   },
+                  "restorableUntil": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
                   "revision": {
                     "fieldType": {
                       "type": "number"

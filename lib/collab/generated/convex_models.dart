@@ -5955,6 +5955,7 @@ final class StrategyGetPageListResultTrashedPagesItem {
     required this.isAttack,
     required this.name,
     required this.publicId,
+    required this.restorableUntil,
     required this.revision,
     required this.sortIndex,
     required this.strategyPublicId,
@@ -5967,6 +5968,7 @@ final class StrategyGetPageListResultTrashedPagesItem {
   final ConvexOptional<bool> isAutoNamed;
   final String name;
   final String publicId;
+  final double restorableUntil;
   final double revision;
   final double sortIndex;
   final String strategyPublicId;
@@ -6007,6 +6009,10 @@ final class StrategyGetPageListResultTrashedPagesItem {
         object.value['publicId'] ?? _missing(path, 'publicId'),
         '$path.publicId',
       ),
+      restorableUntil: _decodeNumber(
+        object.value['restorableUntil'] ?? _missing(path, 'restorableUntil'),
+        '$path.restorableUntil',
+      ),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -6036,6 +6042,10 @@ final class StrategyGetPageListResultTrashedPagesItem {
         'isAutoNamed': ConvexBoolean(isAutoNamed.value),
       'name': ConvexString(name),
       'publicId': ConvexString(publicId),
+      'restorableUntil': _encodeNumber(
+        restorableUntil,
+        '$path.restorableUntil',
+      ),
       'revision': _encodeNumber(revision, '$path.revision'),
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
       'strategyPublicId': ConvexString(strategyPublicId),

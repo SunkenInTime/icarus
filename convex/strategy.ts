@@ -21,7 +21,7 @@ import {
   getStrategyByPublicId,
   lineupsOnPages,
   listLivePages,
-  listRestorablePages,
+  listTrashedPages,
   sortByNumberField,
 } from "./lib/entities";
 import { elementFieldLevelArg } from "./lib/elementFields";
@@ -127,18 +127,18 @@ export const getPageList = query({
     if (args.includeTrashed !== true) return list;
     return {
       ...list,
-      trashedPages: await restorablePageEntries(ctx, strategy, role),
+      trashedPages: await trashedPageEntries(ctx, strategy, role),
     };
   },
 });
 
-async function restorablePageEntries(
+async function trashedPageEntries(
   ctx: QueryCtx,
   strategy: Doc<"strategies">,
   role: StrategyRole,
 ) {
   if (!hasRole(role, "editor")) return [];
-  const pages = await listRestorablePages(ctx, strategy._id, Date.now());
+  const pages = await listTrashedPages(ctx, strategy._id);
   if (pages.length === 0) return [];
   const reader = await requireCurrentUser(ctx);
   const deleterNames = await deleterNamesOf(ctx, pages);

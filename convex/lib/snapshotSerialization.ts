@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import { withoutLaterFields } from "./elementFields";
 import { withoutPictureId } from "./imageAssets";
+import { PAGE_TRASH_RETENTION_MS } from "./entities";
 
 export function serializeStrategyHeader(
   strategy: Doc<"strategies">,
@@ -55,6 +56,7 @@ export function serializeTrashedPageEntry(
     revision: page.revision,
     createdAt: page.createdAt,
     deletedAt: page.deletedAt!,
+    restorableUntil: page.deletedAt! + PAGE_TRASH_RETENTION_MS,
     deletedBy,
   };
 }

@@ -133,6 +133,19 @@ export async function listRestorablePages(
     .collect();
 }
 
+export async function listTrashedPages(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+): Promise<Doc<"pages">[]> {
+  return await ctx.db
+    .query("pages")
+    .withIndex("by_strategyId_and_deletedAt", (q) =>
+      q.eq("strategyId", strategyId).gt("deletedAt", undefined),
+    )
+    .order("desc")
+    .collect();
+}
+
 export async function deleterNamesOf(
   ctx: AnyCtx,
   pages: Doc<"pages">[],

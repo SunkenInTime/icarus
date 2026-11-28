@@ -7,6 +7,7 @@ import { makeFunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import { markAssetReferencesReady } from "./lib/assetReferences";
 import { PAGE_TRASH_RETENTION_MS } from "./lib/entities";
 import schema from "./schema";
 import { modules } from "./test.setup";
@@ -25,7 +26,9 @@ const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const getShell = makeFunctionReference<"query">("strategy:getShell");
 const getPageList = makeFunctionReference<"query">("strategy:getPageList");
 const listTrashed = makeFunctionReference<"query">("pages:listTrashed");
-const restorePage = makeFunctionReference<"mutation">("pages:restore");
+const purgeTrashedPages = makeFunctionReference<"mutation">(
+  "maintenance:purgeTrashedPages",
+);
 
 type Harness = TestConvexForDataModel<DataModel>;
 type Who = "owner" | "editor" | "viewer" | "stranger";
@@ -51,6 +54,7 @@ type ListedPage = Descriptor & {
 
 type TrashedEntry = Omit<Descriptor, "updatedAt"> & {
   deletedAt: number;
+  restorableUntil: number;
   deletedBy: "you" | "unknown" | { name: string };
 };
 
@@ -474,7 +478,12 @@ describe("strategy:getPageList with includeTrashed", () => {
     deletedBy: TrashedEntry["deletedBy"],
   ): TrashedEntry {
     const { updatedAt: _updated, ...descriptor } = withoutContent(page);
-    return { ...descriptor, deletedAt, deletedBy };
+    return {
+      ...descriptor,
+      deletedAt,
+      restorableUntil: deletedAt + PAGE_TRASH_RETENTION_MS,
+      deletedBy,
+    };
   }
 
   const listed = (list: PageList, publicId: string) =>
@@ -536,18 +545,27 @@ describe("strategy:getPageList with includeTrashed", () => {
 
     const dialog = (await users.owner.query(listTrashed, {
       strategyPublicId,
-    })) as Array<{ publicId: string; name: string; deletedAt: number }>;
+    })) as Array<{
+      publicId: string;
+      name: string;
+      deletedAt: number;
+      restorableUntil: number;
+    }>;
     expect(
-      owner.trashedPages!.map(({ publicId, name, deletedAt }) => ({
-        publicId,
-        name,
-        deletedAt,
-      })),
+      owner.trashedPages!.map(
+        ({ publicId, name, deletedAt, restorableUntil }) => ({
+          publicId,
+          name,
+          deletedAt,
+          restorableUntil,
+        }),
+      ),
     ).toEqual(
-      dialog.map(({ publicId, name, deletedAt }) => ({
+      dialog.map(({ publicId, name, deletedAt, restorableUntil }) => ({
         publicId,
         name,
         deletedAt,
+        restorableUntil,
       })),
     );
   });
@@ -579,35 +597,46 @@ describe("strategy:getPageList with includeTrashed", () => {
     expect(throughLink.trashedPages).toEqual([]);
   });
 
-  test("a page is sent until the moment its time in the trash is up, as long as it can be restored", async () => {
+  test("a page is sent while its row lives, restorable until its time in the trash is up, then gone once purged", async () => {
     vi.useFakeTimers();
-    const { users } = await createHarness();
+    const { t, users } = await createHarness();
+    await t.run(markAssetReferencesReady);
     await addPage(users.owner, "page-2", 1);
-    const deletedAt = Date.now();
     await deletePage(users.owner, "page-2");
+    const sent = (await listWithTrash(users.owner, true)).trashedPages![0]!;
+    const timeUp = sent.deletedAt + PAGE_TRASH_RETENTION_MS;
+    const ids = (list: PageList) =>
+      list.trashedPages!.map((page) => page.publicId);
 
-    vi.setSystemTime(deletedAt + PAGE_TRASH_RETENTION_MS - 1);
-    expect(
-      (await listWithTrash(users.owner, true)).trashedPages!.map(
-        (page) => page.publicId,
-      ),
-    ).toEqual(["page-2"]);
-    expect(
-      await users.owner.query(listTrashed, { strategyPublicId }),
-    ).toHaveLength(1);
+    vi.setSystemTime(timeUp - 1);
+    expect(ids(await listWithTrash(users.owner, true))).toEqual(["page-2"]);
 
-    vi.setSystemTime(deletedAt + PAGE_TRASH_RETENTION_MS);
+    vi.setSystemTime(timeUp);
+    const atTheMoment = await listWithTrash(users.owner, true);
+    expect(atTheMoment.trashedPages).toEqual([sent]);
+    expect(atTheMoment.trashedPages![0]!.restorableUntil).toBe(Date.now());
+    const { results } = (await users.owner.mutation(applyBatch, {
+      ...protocol,
+      strategyPublicId,
+      clientId: "client",
+      checkTrashedPageDeletes: true,
+      ops: [
+        {
+          opId: `op-${++opCounter}`,
+          type: "page.restore",
+          pagePublicId: "page-2",
+        },
+      ],
+    })) as { results: Array<Record<string, unknown>> };
+    expect(results).toMatchObject([
+      { status: "rejected", reason: "not_found" },
+    ]);
+    expect(ids(await listWithTrash(users.owner, true))).toEqual(["page-2"]);
+
+    vi.setSystemTime(timeUp + 1);
+    await t.mutation(purgeTrashedPages, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect((await listWithTrash(users.owner, true)).trashedPages).toEqual([]);
-    expect(await users.owner.query(listTrashed, { strategyPublicId })).toEqual(
-      [],
-    );
-    await expect(
-      users.owner.mutation(restorePage, {
-        ...protocol,
-        strategyPublicId,
-        pagePublicId: "page-2",
-      }),
-    ).rejects.toThrow();
   });
 
   test("an entry holds everything a restore changes: the pages after it are the list it was sent with, the page put back", async () => {
@@ -626,7 +655,12 @@ describe("strategy:getPageList with includeTrashed", () => {
       const entry = list.trashedPages!.find(
         (page) => page.publicId === publicId,
       )!;
-      const { deletedAt: _at, deletedBy: _by, ...page } = entry;
+      const {
+        deletedAt: _at,
+        restorableUntil: _until,
+        deletedBy: _by,
+        ...page
+      } = entry;
       const ordered: Omit<Descriptor, "updatedAt">[] = list.pages.map(
         (listedPage) => {
           const { updatedAt: _updated, ...descriptor } =
