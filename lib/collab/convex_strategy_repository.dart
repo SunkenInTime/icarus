@@ -289,7 +289,6 @@ class ConvexStrategyRepository {
             strategyPublicId: strategyPublicId,
             shareToken: _optional(shareToken),
             accountSubject: _optional(accountSubject),
-            includeTrashed: const ConvexOptional.present(true),
           )
           .stampedOn(_stampedTransport)
           .watch()
@@ -319,10 +318,14 @@ class ConvexStrategyRepository {
           clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
           strategyPublicId: strategyPublicId,
           accountSubject: ConvexOptional.present(accountSubject),
-          includeTrashed: const ConvexOptional.present(true),
         )
         .watch()
-        .map(_pageList);
+        .map(
+          (result) => RemotePageList(
+            header: _strategyHeader(result.header),
+            pages: result.pages.map(_fullPage).toList(growable: false),
+          ),
+        );
   }
 
   ConvexQuery<StrategyGetPageListResult> _pageListQuery(
@@ -333,17 +336,11 @@ class ConvexStrategyRepository {
         clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
         strategyPublicId: strategyPublicId,
         accountSubject: ConvexOptional.present(accountSubject),
-        includeTrashed: const ConvexOptional.present(true),
       );
 
   RemotePageList _pageList(StrategyGetPageListResult result) => RemotePageList(
         header: _strategyHeader(result.header),
         pages: result.pages.map(_fullPage).toList(growable: false),
-        trashedPages: [
-          if (result.trashedPages.isPresent)
-            for (final page in result.trashedPages.value)
-              Map<String, Object?>.from(page.encode('trashedPage').toDart()),
-        ],
       );
 
   ConvexQuery<PageGetSnapshotResult> _pageQuery(

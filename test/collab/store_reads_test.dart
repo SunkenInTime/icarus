@@ -113,62 +113,6 @@ void main() {
     expect(header.role, const RoleKnown(CloudRole.owner));
   });
 
-  test(
-      'the page list asks for the trash and carries each trashed page as the '
-      'store\'s confirmed trashed row', () async {
-    transport.answer = (_) => {
-          ...listAnswer(),
-          'trashedPages': [
-            {
-              'createdAt': 1795828106631,
-              'deletedAt': 1795828112278,
-              'deletedBy': {'name': 'jules'},
-              'isAttack': false,
-              'isAutoNamed': false,
-              'name': 'Page 3',
-              'publicId': 'p3',
-              'restorableUntil': 1798420112278,
-              'revision': 2,
-              'sortIndex': 1,
-              'strategyPublicId': strategy,
-            },
-            {
-              'createdAt': 1795828105415,
-              'deletedAt': 1795828111096,
-              'deletedBy': 'you',
-              'isAttack': false,
-              'isAutoNamed': false,
-              'name': 'Page 2',
-              'publicId': 'p2',
-              'restorableUntil': 1798420111096,
-              'revision': 1,
-              'sortIndex': 1,
-              'strategyPublicId': strategy,
-            },
-          ],
-        };
-    final outcome = await reads.pageList(
-      strategyPublicId: strategy,
-      account: owner,
-    );
-    expect(transport.queries.single.$2['includeTrashed'], isTrue);
-    final header = (outcome as StoreReadAnswered).base as HeaderRead;
-    expect(
-        [for (final page in header.pages) page.publicId], ['p1', 'p3', 'p2']);
-    final trashed = [
-      for (final page in header.pages)
-        if (page case final ConfirmedTrashedPage trashed) trashed,
-    ];
-    expect([
-      for (final page in trashed) page.deletedBy
-    ], const [
-      DeletedByName('jules'),
-      DeletedByYou(),
-    ]);
-    expect(trashed.first.sortIndex, 1);
-    expect(trashed.first.revision, 2);
-  });
-
   test('a viewer\'s page list says the caller cannot edit', () async {
     transport.answer = (_) => listAnswer(role: 'viewer');
     final outcome = await reads.pageList(

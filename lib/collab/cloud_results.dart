@@ -2,15 +2,10 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 class RemotePageList {
-  const RemotePageList({
-    required this.header,
-    required this.pages,
-    this.trashedPages = const [],
-  });
+  const RemotePageList({required this.header, required this.pages});
 
   final RemoteStrategyHeader header;
   final List<RemoteFullPage> pages;
-  final List<Map<String, Object?>> trashedPages;
 }
 
 sealed class ResultRows<T> {
@@ -74,9 +69,6 @@ PageRow _page(RemotePage page) => _read(PageRow.decode({
       'deleted': false,
     }));
 
-PageRow _trashedPage(Map<String, Object?> wire) =>
-    _read(PageRow.decode({...wire, 'deleted': true}));
-
 PageSettingsRow _settings(String pagePublicId, RemotePageContent content) =>
     _read(PageSettingsRow.decode({
       'pagePublicId': pagePublicId,
@@ -126,10 +118,7 @@ PictureAsset _picture(RemoteImageAsset asset) => PictureAsset(
 ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
       () => HeaderRead(
         strategy: _strategy(list.header),
-        pages: [
-          for (final page in list.pages) _page(page.page),
-          for (final page in list.trashedPages) _trashedPage(page),
-        ],
+        pages: [for (final page in list.pages) _page(page.page)],
         settings: [
           for (final page in list.pages)
             _settings(page.page.publicId, page.content),
