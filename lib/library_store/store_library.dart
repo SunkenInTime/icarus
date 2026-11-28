@@ -109,8 +109,15 @@ final class StoreLibraryNotLoaded extends StoreLibraryLoad {
 
 typedef _Held = ({
   Map<String, StrategyData> strategies,
-  Map<String, Folder> folders
+  Map<String, Folder> folders,
+  Map<String, Map<String, int>> numbers,
 });
+
+Map<String, int> _numbersOf(StrategyRowSet rows) => {
+      for (final element in rows.elements)
+        if (element case ReadableElementRow(:final publicId, :final sortIndex))
+          publicId: sortIndex,
+    };
 
 sealed class _Read {
   const _Read();
@@ -174,6 +181,7 @@ Future<_Read> _readKept(
   Map<String, Folder> folders,
 ) async {
   final strategies = <String, StrategyData>{};
+  final numbers = <String, Map<String, int>>{};
   for (final summary in kept) {
     final id = summary.publicId;
     final StoredStrategy read;
@@ -181,6 +189,7 @@ Future<_Read> _readKept(
       case StoredRowsRead(:final rows, written: WrittenAt(:final version))
           when version <= Settings.versionNumber:
         read = strategyOfRows(rows, versionNumber: version);
+        numbers[id] = _numbersOf(rows);
       case StoredRowsRead(written: WrittenAt(:final version)):
         return _ReadNot(
           'the strategy "${summary.name}" ($id) was written by a newer '
@@ -207,7 +216,9 @@ Future<_Read> _readKept(
         return _ReadNot('the strategy $id reads as $other');
     }
   }
-  return _ReadWhole((strategies: strategies, folders: folders));
+  return _ReadWhole(
+    (strategies: strategies, folders: folders, numbers: numbers),
+  );
 }
 
 sealed class _Commit {
@@ -267,7 +278,8 @@ LibraryWrite _failed(String words, {bool mayHaveLanded = false}) =>
 final class StoreLibrary {
   StoreLibrary._(this._store, this._lost, _Held held)
       : strategies = StoreRecords(held.strategies),
-        folders = StoreRecords(held.folders);
+        folders = StoreRecords(held.folders),
+        _numbers = held.numbers;
 
   static Future<StoreLibraryLoad> load(
     LibraryStore store, {
@@ -282,6 +294,7 @@ final class StoreLibrary {
   final LibraryStore _store;
   final void Function(String why) _lost;
   var _isLost = false;
+  Map<String, Map<String, int>> _numbers;
   final StoreRecords<StrategyData> strategies;
   final StoreRecords<Folder> folders;
   Future<void> _turn = Future.value();
@@ -372,6 +385,7 @@ final class StoreLibrary {
       case _ReadWhole(:final held):
         strategies._replaceAll(held.strategies);
         folders._replaceAll(held.folders);
+        _numbers = held.numbers;
         for (final inFlight in [..._inFlight]) {
           inFlight.replay();
         }
@@ -408,7 +422,10 @@ final class StoreLibrary {
       return _failed(refusal);
     }
     final StrategyRowSet rows;
-    switch (strategyToRows(strategy)) {
+    switch (strategyToRows(
+      strategy,
+      storedNumbers: _numbers[strategy.id] ?? const {},
+    )) {
       case StrategyRowsRefused(:final problems):
         return _failed(_unwritable(strategy, problems));
       case StrategyRowsMade(rows: final made):
@@ -418,9 +435,7 @@ final class StoreLibrary {
     return _write(
       show: show,
       replay: show,
-      commit: () async => _commitOf(
-        await _store.putStrategy(rows, writtenAt: strategy.versionNumber),
-      ),
+      commit: () => _putRows(rows, writtenAt: strategy.versionNumber),
     );
   }
 
@@ -448,7 +463,10 @@ final class StoreLibrary {
     }
     final before = stored.copyWith();
     change();
-    switch (strategyToRows(stored)) {
+    switch (strategyToRows(
+      stored,
+      storedNumbers: _numbers[stored.id] ?? const {},
+    )) {
       case StrategyRowsRefused(:final problems):
         asItWas(before);
         return _failed(_unwritable(stored, problems));
@@ -457,11 +475,22 @@ final class StoreLibrary {
         return _write(
           show: () => strategies._put(stored.id, stored),
           replay: () => strategies._put(stored.id, asWritten),
-          commit: () async => _commitOf(
-            await _store.putStrategy(rows, writtenAt: stored.versionNumber),
-          ),
+          commit: () => _putRows(rows, writtenAt: stored.versionNumber),
         );
     }
+  }
+
+  Future<_Commit> _putRows(
+    StrategyRowSet rows, {
+    required int writtenAt,
+  }) async {
+    final committed = _commitOf(
+      await _store.putStrategy(rows, writtenAt: writtenAt),
+    );
+    if (committed is _Committed) {
+      _numbers[rows.strategy.publicId] = _numbersOf(rows);
+    }
+    return committed;
   }
 
   Future<LibraryWrite> putFolder(Folder folder) async {
@@ -501,16 +530,17 @@ final class StoreLibrary {
 
   Future<LibraryWrite> deleteStrategy(String id) {
     void show() => strategies._remove(id);
+    Future<_Commit> remove() async => switch (_store.library) {
+          LibraryShut(:final failure) =>
+            _NotCommitted('the store is shut: $failure'),
+          LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
+          LibraryOpen() =>
+            _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
+        };
     return _write(
       show: show,
       replay: show,
-      commit: () async => switch (_store.library) {
-        LibraryShut(:final failure) =>
-          _NotCommitted('the store is shut: $failure'),
-        LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
-        LibraryOpen() =>
-          _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
-      },
+      commit: () => _forgettingNumbers([id], remove),
     );
   }
 
@@ -529,7 +559,7 @@ final class StoreLibrary {
     return _write(
       show: show,
       replay: show,
-      commit: () async {
+      commit: () => _forgettingNumbers(strategyIds, () async {
         final LibraryList list;
         switch (_store.library) {
           case LibraryOpen(list: final open):
@@ -563,8 +593,17 @@ final class StoreLibrary {
           for (final row in folderRowsChildrenFirst(rows))
             RemoveFolder(row.publicId),
         ]));
-      },
+      }),
     );
+  }
+
+  Future<_Commit> _forgettingNumbers(
+    Iterable<String> strategyIds,
+    Future<_Commit> Function() commit,
+  ) async {
+    final committed = await commit();
+    if (committed is _Committed) strategyIds.forEach(_numbers.remove);
+    return committed;
   }
 
   String? _deleteRefusal(List<String> folderIds, List<String> strategyIds) {

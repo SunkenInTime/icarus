@@ -299,8 +299,13 @@ final class RowsFinished extends RowsStep {
 StrategyToRows strategyToRows(
   StrategyData strategy, {
   Iterable<UnreadableElement> carried = const [],
+  Map<String, int> storedNumbers = const {},
 }) =>
-    switch (strategyToRowsInSteps(strategy, carried: carried).last) {
+    switch (strategyToRowsInSteps(
+      strategy,
+      carried: carried,
+      storedNumbers: storedNumbers,
+    ).last) {
       RowsFinished(:final rows) => rows,
       ItemConverted() ||
       PageConverted() =>
@@ -310,6 +315,7 @@ StrategyToRows strategyToRows(
 Iterable<RowsStep> strategyToRowsInSteps(
   StrategyData strategy, {
   Iterable<UnreadableElement> carried = const [],
+  Map<String, int> storedNumbers = const {},
 }) sync* {
   final problems = <RowsProblem>[];
   if (strategy.versionNumber < Settings.versionNumber) {
@@ -376,7 +382,8 @@ Iterable<RowsStep> strategyToRowsInSteps(
     settings.add(settingsRow);
 
     for (final items in pageItemsByKind(page)) {
-      for (final (sortIndex, item) in items.indexed) {
+      var numberBefore = -1;
+      for (final (position, item) in items.indexed) {
         switch (item.payload) {
           case CouldNotRead(:final problem):
             problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
@@ -385,11 +392,16 @@ Iterable<RowsStep> strategyToRowsInSteps(
             final rowId = takenElementIds.contains(item.id)
                 ? _derivedId(
                     {...takenElementIds, ...everyItemId},
-                    [strategy.id, page.id, item.id, sortIndex],
+                    [strategy.id, page.id, item.id, position],
                   )
                 : item.id;
             takenElementIds.add(rowId);
             itemCounts[item.kind] = itemCounts[item.kind]! + 1;
+            final sortIndex = switch (storedNumbers[rowId]) {
+              final stored? when stored > numberBefore => stored,
+              _ => numberBefore + 1,
+            };
+            numberBefore = sortIndex;
             final row = LiveElement(
               publicId: rowId,
               pagePublicId: page.id,
