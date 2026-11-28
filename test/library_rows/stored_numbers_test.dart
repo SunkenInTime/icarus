@@ -27,6 +27,12 @@ Map<String, int> _numbers(StrategyRowSet rows) => {
         row.publicId: row.sortIndex,
     };
 
+List<String> _drawingIdsBack(StrategyRowSet rows) =>
+    [for (final drawing in _back(rows).pages.first.drawingData) drawing.id];
+
+List<String> _drawingIds(StrategyData strategy) =>
+    [for (final drawing in strategy.pages.first.drawingData) drawing.id];
+
 Map<String, int> _drawingNumbers(StrategyRowSet rows, StrategyPage page) {
   final ids = {for (final drawing in page.drawingData) drawing.id};
   return {
@@ -57,9 +63,7 @@ void main() {
   final strategy = generatedStrategy(Optionals.set);
   final page = strategy.pages.first;
 
-  test('the strategy used here has several drawings on its first page', () {
-    expect(page.drawingData.length, greaterThanOrEqualTo(3));
-  });
+  setUpAll(() => expect(page.drawingData.length, greaterThanOrEqualTo(3)));
 
   test(
       'removing the first drawing keeps every other item\'s stored number, '
@@ -73,6 +77,7 @@ void main() {
     for (final MapEntry(:key, :value) in kept.entries) {
       expect(value, _numbers(stored)[key], reason: key);
     }
+    expect(_drawingIdsBack(rows), _drawingIds(removed));
     expect(strategyDifferences(_back(rows), _back(_rows(removed))), isEmpty);
   });
 
@@ -92,6 +97,7 @@ void main() {
       expect(after[key], value, reason: key);
     }
     expect(after['added-drawing'], before.values.reduce((a, b) => a > b ? a : b) + 1);
+    expect(_drawingIdsBack(rows), _drawingIds(added));
     expect(strategyDifferences(_back(rows), _back(_rows(added))), isEmpty);
   });
 
@@ -108,6 +114,7 @@ void main() {
       expect(after[drawing.id], before[drawing.id], reason: drawing.id);
     }
     expect(after[first.id], before.values.reduce((a, b) => a > b ? a : b) + 1);
+    expect(_drawingIdsBack(rows), _drawingIds(raised));
     expect(strategyDifferences(_back(rows), _back(_rows(raised))), isEmpty);
   });
 
@@ -125,10 +132,7 @@ void main() {
 
     final rows = _rows(lowered, _numbers(stored));
 
-    final order = [
-      for (final drawing in _back(rows).pages.first.drawingData) drawing.id,
-    ];
-    expect(order, [for (final drawing in lowered.pages.first.drawingData) drawing.id]);
+    expect(_drawingIdsBack(rows), _drawingIds(lowered));
     expect(strategyDifferences(_back(rows), _back(_rows(lowered))), isEmpty);
   });
 

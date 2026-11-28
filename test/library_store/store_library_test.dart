@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/maps.dart';
@@ -412,8 +413,9 @@ void main() {
   });
 
   test(
-      'after a removal, a drawing added later takes the number after the last '
-      'and is the only element row written', () async {
+      'a drawing raised to the top keeps the number that save gave it, so '
+      'removing the drawing below it afterwards writes no element row',
+      () async {
     await _library();
     final gate = CommitGate();
     final storage = MemoryStorage();
@@ -422,22 +424,19 @@ void main() {
     const library = LocalLibrary();
     final stored = library.storedStrategy('a')!;
     final page = stored.pages.first;
-    final removed = stored.copyWith(pages: [
-      page.copyWith(drawingData: [...page.drawingData.skip(1)]),
-      ...stored.pages.skip(1),
-    ]);
-    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
-    final first = page.drawingData.first;
-    final added = removed.copyWith(pages: [
-      removed.pages.first.copyWith(
-        drawingData: [...removed.pages.first.drawingData, first],
-      ),
-      ...removed.pages.skip(1),
-    ]);
+    expect(page.drawingData.length, greaterThanOrEqualTo(3));
+    StrategyData withDrawings(List<DrawingElement> drawings) =>
+        stored.copyWith(pages: [
+          page.copyWith(drawingData: drawings),
+          ...stored.pages.skip(1),
+        ]);
+    final [first, ...rest] = page.drawingData;
     gate.puts.clear();
 
-    expect(await library.savePageOnScreen(added), isA<LibraryWritten>());
-
+    expect(
+      await library.savePageOnScreen(withDrawings([...rest, first])),
+      isA<LibraryWritten>(),
+    );
     expect(
       [
         for (final (_, key) in gate.puts)
@@ -445,11 +444,23 @@ void main() {
       ],
       hasLength(1),
     );
+    final removed = withDrawings([...rest.take(rest.length - 1), first]);
+    gate.puts.clear();
+
+    expect(await library.savePageOnScreen(removed), isA<LibraryWritten>());
+
+    expect(
+      [
+        for (final (_, key) in gate.puts)
+          if (key.contains('/e/')) key,
+      ],
+      isEmpty,
+    );
     await store.close();
     final back = await reopened(storage);
     expect(
       [for (final d in back.strategies['a']!.pages.first.drawingData) d.id],
-      [for (final d in added.pages.first.drawingData) d.id],
+      [for (final d in removed.pages.first.drawingData) d.id],
     );
   });
 

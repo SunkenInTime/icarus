@@ -480,7 +480,10 @@ final class StoreLibrary {
     }
   }
 
-  Future<_Commit> _putRows(StrategyRowSet rows, {required int writtenAt}) async {
+  Future<_Commit> _putRows(
+    StrategyRowSet rows, {
+    required int writtenAt,
+  }) async {
     final committed = _commitOf(
       await _store.putStrategy(rows, writtenAt: writtenAt),
     );
@@ -527,16 +530,17 @@ final class StoreLibrary {
 
   Future<LibraryWrite> deleteStrategy(String id) {
     void show() => strategies._remove(id);
+    Future<_Commit> remove() async => switch (_store.library) {
+          LibraryShut(:final failure) =>
+            _NotCommitted('the store is shut: $failure'),
+          LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
+          LibraryOpen() =>
+            _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
+        };
     return _write(
       show: show,
       replay: show,
-      commit: () async => switch (_store.library) {
-        LibraryShut(:final failure) =>
-          _NotCommitted('the store is shut: $failure'),
-        LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
-        LibraryOpen() =>
-          _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
-      },
+      commit: () => _forgettingNumbers([id], remove),
     );
   }
 
@@ -555,7 +559,7 @@ final class StoreLibrary {
     return _write(
       show: show,
       replay: show,
-      commit: () async {
+      commit: () => _forgettingNumbers(strategyIds, () async {
         final LibraryList list;
         switch (_store.library) {
           case LibraryOpen(list: final open):
@@ -589,8 +593,17 @@ final class StoreLibrary {
           for (final row in folderRowsChildrenFirst(rows))
             RemoveFolder(row.publicId),
         ]));
-      },
+      }),
     );
+  }
+
+  Future<_Commit> _forgettingNumbers(
+    Iterable<String> strategyIds,
+    Future<_Commit> Function() commit,
+  ) async {
+    final committed = await commit();
+    if (committed is _Committed) strategyIds.forEach(_numbers.remove);
+    return committed;
   }
 
   String? _deleteRefusal(List<String> folderIds, List<String> strategyIds) {
