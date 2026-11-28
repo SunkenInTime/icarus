@@ -39,7 +39,8 @@ void ownerChangesTheStrategy(World world, String name) {
 
 bool viewerAnswered(World world) =>
     switch (world.sender.accessRung(strategyId)) {
-      (cannot: null, account: _, signIns: _, count: _, at: _) => true,
+      (cannot: null, account: _, signIns: _, connection: _, count: _, at: _) =>
+        true,
       _ => false,
     };
 

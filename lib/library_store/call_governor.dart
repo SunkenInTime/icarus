@@ -25,6 +25,7 @@ typedef Rung = ({int count, DateTime at, StallExit why});
 typedef AccessRung = ({
   Account account,
   int signIns,
+  int? connection,
   int count,
   DateTime at,
   CannotRead? cannot,
@@ -208,14 +209,16 @@ final class CallGovernor {
 
   AccessRung? access(String id, Snapshot snap) => switch (_access[id]) {
         final rung?
-            when rung.account == snap.account && rung.signIns == snap.signIns =>
+            when rung.account == snap.account &&
+                rung.signIns == snap.signIns &&
+                rung.connection == snap.connection =>
           rung,
         _ => null,
       };
 
   bool accessStopped(String id, Snapshot snap) => switch (access(id, snap)) {
-        (:final count, at: _, cannot: _, account: _, signIns: _) =>
-          _editorShows() != id && _timing.accessAfter(count) == null,
+        final rung? =>
+          _editorShows() != id && _timing.accessAfter(rung.count) == null,
         null => false,
       };
 
@@ -224,13 +227,30 @@ final class CallGovernor {
     _access[id] = (
       account: snap.account!,
       signIns: snap.signIns,
+      connection: snap.connection,
       count: (kept?.count ?? 0) + 1,
       at: _clock(),
       cannot: cannot,
     );
   }
 
+  void viewerAnswered(String id, Snapshot snap) {
+    final kept = access(id, snap);
+    _access[id] = (
+      account: snap.account!,
+      signIns: snap.signIns,
+      connection: snap.connection,
+      count: kept?.count ?? 0,
+      at: kept?.at ?? _clock(),
+      cannot: null,
+    );
+  }
+
   void accessConfirmed(String id) => _access.remove(id);
+
+  void readAnswered(String id, Snapshot snap) {
+    if (access(id, snap)?.cannot != null) _access.remove(id);
+  }
 
   void newEvidence(String id, [Set<ReadOf>? about]) {
     if (about == null || about.contains(const ReadOfList())) {
@@ -288,10 +308,9 @@ final class CallGovernor {
         case (:final count, :final at, :final why)) {
       notBefore(at.add(_timing.settleAfter(count)), why);
     }
-    if (access
-        case (:final count, :final at, cannot: _, account: _, signIns: _)) {
+    if (access case final rung? when rung.count > 0) {
       notBefore(
-        at.add(_timing.accessAfter(count) ?? _timing.readAgainAfter),
+        rung.at.add(_timing.accessAfter(rung.count) ?? _timing.readAgainAfter),
         accessRow,
       );
     }

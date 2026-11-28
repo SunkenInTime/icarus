@@ -1665,12 +1665,19 @@ final class CloudSender implements LiveResults {
         if (_inputs != snap) return const _Restart();
         if (read is ReadOfList) _unread.add(id);
         _recorded(id, read, why, role, cloud, started, snap);
+        final held = switch (written) {
+          WrittenWith(alreadyHeld: [_, ...]) =>
+            ', an answer the store already held',
+          _ => '',
+        };
         _note(
             id,
             switch (why) {
-              _Why.access when confirms => 'read $read: edit access confirmed',
-              _Why.access => 'read $read: this account still cannot edit it',
-              _ => 'read $read (${why.words})',
+              _Why.access when confirms =>
+                'read $read$held: edit access confirmed',
+              _Why.access =>
+                'read $read$held: this account still cannot edit it',
+              _ => 'read $read (${why.words})$held',
             });
         _failures.remove(id);
         notBefore.remove(id);
@@ -1699,16 +1706,15 @@ final class CloudSender implements LiveResults {
     DateTime started,
     Snapshot snap,
   ) {
-    switch (why) {
-      case _Why.access when !(role?.edits ?? false):
-        _governor.climbAccess(id, snap, null);
-      case _Why.access ||
-            _Why.need ||
-            _Why.clock ||
-            _Why.adopt ||
-            _Why.retire ||
-            _Why.live:
+    switch ((role, why)) {
+      case (StoreReadRole.owner || StoreReadRole.editor, _):
         _governor.accessConfirmed(id);
+      case (_, _Why.access):
+        _governor.climbAccess(id, snap, null);
+      case (StoreReadRole.viewer, _):
+        _governor.viewerAnswered(id, snap);
+      case (null, _):
+        _governor.readAnswered(id, snap);
     }
     final memory = _boundMemory(id, snap);
     _governor.remember(
