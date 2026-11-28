@@ -95,11 +95,13 @@ in here.
 | `launchWeekly` | The same once every copy is a week old: every strategy read whole. | the everyday set |
 | `openTypical`, `openLarge` | A cold open on desktop, copy read included. | the everyday set |
 | `pageListTypical`, `pageListLarge` | One `strategy:getPageList` of the 4-page and the 20-page strategy after a change, with `strategy:getShell` on the same strategy as a note. No shipped client calls it yet. | the everyday set |
+| `pageListTrash0`, `pageListTrash5`, `pageListTrash50` | One `strategy:getPageList` with `includeTrashed` of a strategy of 4 live pages and 0, 5 or 50 in the trash, with the same read without it as a note. No shipped client asks for the trash. | the everyday set |
 | `pageSwitchNew`, `pageSwitchBack` | Switching to a page not read yet, and back to one just read. | the everyday set |
 | `reopenDesktop`, `reopenWeb` | Opening an unchanged strategy again, within seconds. | the everyday set |
 | `soloSession` | 50 single moves with the editor's and library's live queries held. | the everyday set, library list re-runs |
 | `drawingMove` | Moving a 2,000-point freehand drawing. | the everyday set |
 | `twoPeople` | 20 moves by the owner, counting what the teammate's live queries re-run. | the everyday set |
+| `openFiveStoreTrash` | `openFiveStore` on a strategy that also has 5 pages of 60 items in the trash, the page list watched with `includeTrashed`. | the everyday set |
 | `liveListEdit` | Item edits (own, a teammate's on the open page and on another page, then ten own) with `strategy:getPageList` watched with its account, as the store's editor watches it. | the everyday set, and page list re-runs, which must stay 0: an item edit writes no row a list query reads |
 | `openFive`, `reopenFive`, `pageSwitchFive`, `oneEditFive` | A 5-page strategy of 60 items a page: a cold open on desktop, a reopen within seconds, a switch to a page not read yet, and one agent moved. | the everyday set |
 | `openFiveStore`, `reopenFiveStore`, `pageSwitchFiveStore`, `oneEditFiveStore` | The same four as the editor of a store-owned strategy makes them, with the cloud store's switch on: the page list and the page watched with the account named, no read before a watch, no `strategy:getShell` or `strategy:getFullSnapshot`, the edit sent by the store's sender naming lives. These are a model of what the editor will do, so they cannot fail because of the Dart code: when the store-owned editor lands, a Dart test counts its real transport calls for the same four flows and holds them to these numbers. | the everyday set, and function calls no more than the same flow's without the switch |

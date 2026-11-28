@@ -3138,6 +3138,7 @@ abstract interface class StrategyModule {
   ConvexQuery<StrategyGetPageListResult> getPageList({
     ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<bool> includeTrashed = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
@@ -3187,12 +3188,14 @@ final class _StrategyModule implements StrategyModule {
   ConvexQuery<StrategyGetPageListResult> getPageList({
     ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
+    ConvexOptional<bool> includeTrashed = const ConvexOptional.absent(),
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetPageListArgs(
       accountSubject: accountSubject,
       clientProtocolVersion: clientProtocolVersion,
+      includeTrashed: includeTrashed,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,
     );

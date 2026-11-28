@@ -5,7 +5,9 @@ import {
   assertCallerIsAccount,
   assertStrategyReadable,
   getEffectiveStrategyRoleForUser,
+  hasRole,
   requireCurrentUser,
+  type StrategyRole,
 } from "./lib/auth";
 import { clientUpgradeRequiredError, invalidPayloadError } from "./lib/errors";
 import {
@@ -13,11 +15,13 @@ import {
   cloudProtocolArgs,
 } from "./lib/cloudProtocol";
 import {
+  deleterNamesOf,
   elementsOnPages,
   hasTrashedPages,
   getStrategyByPublicId,
   lineupsOnPages,
   listLivePages,
+  listRestorablePages,
   sortByNumberField,
 } from "./lib/entities";
 import { elementFieldLevelArg } from "./lib/elementFields";
@@ -33,6 +37,7 @@ import {
   serializePageContent,
   serializePageDescriptor,
   serializeStrategyHeader,
+  serializeTrashedPageEntry,
 } from "./lib/snapshotSerialization";
 import { internalError } from "./lib/errors";
 import { readContentVersion } from "./lib/contentVersions";
@@ -87,6 +92,7 @@ export const getPageList = query({
     strategyPublicId: v.string(),
     shareToken: v.optional(v.string()),
     accountSubject: v.optional(v.string()),
+    includeTrashed: v.optional(v.boolean()),
   },
   returns: pageListValidator,
   handler: async (ctx, args) => {
@@ -101,7 +107,7 @@ export const getPageList = query({
       "sortIndex",
     );
 
-    return {
+    const list = {
       header: serializeStrategyHeader(strategy, role),
       pages: await Promise.all(
         pages.map(async (page) => {
@@ -118,8 +124,38 @@ export const getPageList = query({
         }),
       ),
     };
+    if (args.includeTrashed !== true) return list;
+    return {
+      ...list,
+      trashedPages: await restorablePageEntries(ctx, strategy, role),
+    };
   },
 });
+
+async function restorablePageEntries(
+  ctx: QueryCtx,
+  strategy: Doc<"strategies">,
+  role: StrategyRole,
+) {
+  if (!hasRole(role, "editor")) return [];
+  const pages = await listRestorablePages(ctx, strategy._id, Date.now());
+  if (pages.length === 0) return [];
+  const reader = await requireCurrentUser(ctx);
+  const deleterNames = await deleterNamesOf(ctx, pages);
+  return pages.map((page) => {
+    const name =
+      page.deletedBy === undefined ? null : deleterNames.get(page.deletedBy)!;
+    return serializeTrashedPageEntry(
+      strategy.publicId,
+      page,
+      page.deletedBy === reader._id
+        ? "you"
+        : name === null
+          ? "unknown"
+          : { name },
+    );
+  });
+}
 
 export const getFullSnapshot = query({
   args: {

@@ -191,9 +191,29 @@ export const strategyShellValidator = v.object({
   pages: v.array(pageDescriptorValidator),
 });
 
+export const pageDeleterValidator = v.union(
+  v.literal("you"),
+  v.literal("unknown"),
+  v.object({ name: v.string() }),
+);
+
+export const pageListTrashedPageValidator = v.object({
+  publicId: v.string(),
+  strategyPublicId: v.string(),
+  name: v.string(),
+  isAutoNamed: v.optional(v.boolean()),
+  sortIndex: v.number(),
+  isAttack: v.boolean(),
+  revision: v.number(),
+  createdAt: v.number(),
+  deletedAt: v.number(),
+  deletedBy: pageDeleterValidator,
+});
+
 export const pageListValidator = v.object({
   header: strategyHeaderValidator,
   pages: v.array(fullPageValidator),
+  trashedPages: v.optional(v.array(pageListTrashedPageValidator)),
 });
 
 export const pageSnapshotValidator = v.object({

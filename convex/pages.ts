@@ -1,7 +1,6 @@
 import { query } from "./_generated/server";
 import { mutation } from "./lib/functions";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
   assertSupportedCloudProtocol,
@@ -14,6 +13,7 @@ import {
   isTrashed,
   listLivePages,
   listRestorablePages,
+  deleterNamesOf,
   PAGE_TRASH_RETENTION_MS,
   restorePage,
   sortByNumberField,
@@ -36,7 +36,6 @@ import {
   revisionResultValidator,
   trashedPageValidator,
 } from "./lib/publicValidators";
-import { UNKNOWN_DISPLAY_NAME } from "./lib/profile";
 
 export const listForStrategy = query({
   args: { strategyPublicId: v.string() },
@@ -272,32 +271,21 @@ export const listTrashed = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const pages = await listRestorablePages(ctx, strategy._id, Date.now());
-    const deleters = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
-    for (const page of pages) {
-      if (page.deletedBy !== undefined && !deleters.has(page.deletedBy)) {
-        deleters.set(page.deletedBy, ctx.db.get(page.deletedBy));
-      }
-    }
-    return await Promise.all(
-      pages.map(async (page) => {
-        const deletedAt = page.deletedAt!;
-        const deleter =
+    const deleterNames = await deleterNamesOf(ctx, pages);
+    return pages.map((page) => {
+      const deletedAt = page.deletedAt!;
+      return {
+        publicId: page.publicId,
+        name: page.name,
+        deletedAt,
+        restorableUntil: deletedAt + PAGE_TRASH_RETENTION_MS,
+        deletedByName:
           page.deletedBy === undefined
             ? null
-            : await deleters.get(page.deletedBy)!;
-        return {
-          publicId: page.publicId,
-          name: page.name,
-          deletedAt,
-          restorableUntil: deletedAt + PAGE_TRASH_RETENTION_MS,
-          deletedByName:
-            deleter === null || deleter.displayName === UNKNOWN_DISPLAY_NAME
-              ? null
-              : deleter.displayName,
-          deletedByYou: page.deletedBy === user._id,
-        };
-      }),
-    );
+            : deleterNames.get(page.deletedBy)!,
+        deletedByYou: page.deletedBy === user._id,
+      };
+    });
   },
 });
 

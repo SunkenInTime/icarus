@@ -219532,6 +219532,12 @@
             },
             "optional": false
           },
+          "includeTrashed": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "shareToken": {
             "fieldType": {
               "type": "string"
@@ -219779,6 +219785,98 @@
               }
             },
             "optional": false
+          },
+          "trashedPages": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "createdAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "deletedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "deletedBy": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "you"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "unknown"
+                        },
+                        {
+                          "type": "object",
+                          "value": {
+                            "name": {
+                              "fieldType": {
+                                "type": "string"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "isAttack": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "isAutoNamed": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": true
+                  },
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "revision": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "sortIndex": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": true
           }
         }
       },

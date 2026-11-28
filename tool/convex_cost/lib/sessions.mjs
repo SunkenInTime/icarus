@@ -176,17 +176,18 @@ class Editor {
 }
 
 class StoreEditor {
-  constructor(device, strategy) {
+  constructor(device, strategy, { includeTrashed } = {}) {
     this.device = device;
     this.strategy = strategy;
     this.named = { accountSubject: COACH.subject };
+    this.listArgs = includeTrashed ? { includeTrashed } : {};
     this.unsubscribes = [];
   }
 
   async open(pagePublicId) {
     const strategyPublicId = this.strategy.publicId;
     const pageId = pagePublicId ?? this.strategy.pages[0];
-    const list = this.device.watch("strategy:getPageList", { strategyPublicId, ...this.named });
+    const list = this.device.watch("strategy:getPageList", { strategyPublicId, ...this.named, ...this.listArgs });
     const page = PageWatch.start(this.device, strategyPublicId, pageId, this.named);
     this.unsubscribes.push(await list);
     this.page = await page;
@@ -661,6 +662,51 @@ function pageListScenario(key, title, about) {
   };
 }
 
+async function trashPages(device, strategyPublicId, pagePublicIds, rng) {
+  const clientId = rng.uuid();
+  for (const pagePublicId of pagePublicIds) {
+    const { header } = await device.query("strategy:getShell", { strategyPublicId });
+    await device.applyBatch(strategyPublicId, clientId, [
+      { opId: rng.uuid(), type: "page.delete", pagePublicId, expectedStrategyRevision: header.revision },
+    ]);
+  }
+}
+
+const TRASH_LIST_LIVE_PAGES = 4;
+
+function trashedPageListScenario(trashed) {
+  return {
+    title: `Read a page list with ${trashed} pages in the trash`,
+    about:
+      `One strategy:getPageList with includeTrashed, the account named, of a strategy of ${TRASH_LIST_LIVE_PAGES} ` +
+      `live pages and ${trashed} in the trash, all deleted by the reader, after it changed. The note gives the same ` +
+      "read without includeTrashed, which every shipped client makes and which reads no page in the trash.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const coach = world.coach;
+      const strategy = await makeStrategy(coach, rng, {
+        name: `trash list ${trashed}`,
+        pageCount: TRASH_LIST_LIVE_PAGES + trashed,
+        items: 8,
+        itemsOnFirstPageOnly: true,
+      });
+      await trashPages(coach, strategy.publicId, strategy.pages.slice(TRASH_LIST_LIVE_PAGES), rng);
+      const args = { strategyPublicId: strategy.publicId, accountSubject: COACH.subject };
+      await rename(strategy);
+      const without = await metered([coach], env, () => coach.query("strategy:getPageList", args));
+      await rename(strategy);
+      const result = await metered([coach], env, () =>
+        coach.query("strategy:getPageList", { ...args, includeTrashed: true }),
+      );
+      result.notes = [
+        `without includeTrashed the same read read ${without.metrics.readBytes} B and returned ` +
+          `${without.metrics.returnBytes} B (not budgeted here)`,
+      ];
+      return result;
+    },
+  };
+}
+
 function reopenScenario(desktop) {
   return {
     world: "team",
@@ -917,6 +963,10 @@ export const SESSIONS = {
     "Read a large strategy's page list",
     "The same read on a strategy of 20 pages.",
   ),
+
+  pageListTrash0: trashedPageListScenario(0),
+  pageListTrash5: trashedPageListScenario(5),
+  pageListTrash50: trashedPageListScenario(50),
 
   pageSwitchNew: {
     title: "Switch to a page not yet read",
@@ -1356,6 +1406,24 @@ export const SESSIONS = {
       "presence:issueRoomPass and pages:listTrashed. No getShell and no strategy:getFullSnapshot: the page list " +
       "replaces the shell, and the store is the copy desktop keeps, holding each page once it has been shown.",
     ...fivePageOpen(true),
+  },
+
+  openFiveStoreTrash: {
+    title: "Open a 5-page strategy cold, the store's editor, 5 pages in the trash",
+    about:
+      "openFiveStore's open on a strategy of 5 live pages of 60 items and 5 deleted ones of 60 items, with the page " +
+      "list watched with includeTrashed: the store's first open of a strategy with pages in the trash once it asks " +
+      "for them. pages:listTrashed is still read, as the store's editor reads it today.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const strategy = await makeStrategy(world.coach, rng, { name: "five pages, store, trash", pageCount: 10, items: 60 });
+      await trashPages(world.coach, strategy.publicId, strategy.pages.slice(5), rng);
+      await rename(strategy);
+      const editor = new StoreEditor(world.coach, strategy, { includeTrashed: true });
+      const result = await metered([world.coach], env, () => editor.open());
+      editor.close();
+      return result;
+    },
   },
 
   reopenFive: {

@@ -38,6 +38,27 @@ export function serializePageDescriptor(
   };
 }
 
+export function serializeTrashedPageEntry(
+  strategyPublicId: string,
+  page: Doc<"pages">,
+  deletedBy: "you" | "unknown" | { name: string },
+) {
+  return {
+    publicId: page.publicId,
+    strategyPublicId,
+    name: page.name,
+    ...(page.isAutoNamed === undefined
+      ? {}
+      : { isAutoNamed: page.isAutoNamed }),
+    sortIndex: page.sortIndex,
+    isAttack: page.isAttack,
+    revision: page.revision,
+    createdAt: page.createdAt,
+    deletedAt: page.deletedAt!,
+    deletedBy,
+  };
+}
+
 export function serializePageContent(pageContent: Doc<"pageContents">) {
   return {
     settings: pageContent.settings ?? null,
