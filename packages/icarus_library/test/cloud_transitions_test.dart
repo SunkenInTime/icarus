@@ -709,8 +709,10 @@ String renderTable() {
       'strategy itself is gone nothing retires. A delete this device made '
       'stays known as its own until a result shows a later revision of the '
       'row or its page is gone that way. '
-      'An undo onto a page that is gone names the revision the user saw '
-      'and waits only for its other holds; the server\'s answer settles it.',
+      'An undo onto a page that is gone goes through every check a put-back '
+      'has: this device\'s delete on record, at the revision the undo names, '
+      'and inside its resend window. The result that shows the page gone '
+      'also retires that delete, so in practice the undo asks the user.',
     )
     ..writeln()
     ..writeln('## Which copy of a row a result leaves held')

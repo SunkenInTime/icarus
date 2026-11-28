@@ -3048,32 +3048,58 @@ void main() {
     expect(client.view('whole').sendable, isTrue);
   });
 
-  test('an undo whose page a teammate deleted and the trash purged is sent, '
-      'and the server\'s failure reaches the user', () {
-    final server = Server();
-    final client = online();
-    final drawn = client.visible;
-    client.edit(elementDelete('del'));
-    client.edit(putBackOf('back', drawn, 'e1'));
-    client.must(const ConnectionLost());
-    client.must(reconnected());
-    sendAndAnswer(client, server, ['del']);
-    server.rows = withoutPage(
-      withOp(server.rows, pageDelete('t', 'page-a', expected: 1)),
-      'page-a',
-    );
-    client.read(server.rows);
-    expect(client.view('back').sendable, isTrue);
-    sendAndAnswer(client, server, ['back']);
-    expect(
-      stateOf(client, 'back'),
-      const NeedsUser(
-        RefusedByServer(
-          RejectedByServer(RejectionReason.notFound, NoServerCopy()),
-        ),
-      ),
-    );
-  });
+  group(
+    'an undo onto a page that is gone keeps every other put-back check',
+    () {
+      StrategyRowSet purged(StrategyRowSet rows) => withoutPage(
+        withOp(rows, pageDelete('t', 'page-a', expected: 1)),
+        'page-a',
+      );
+
+      test('past my delete\'s resend window, it is asked, not sent', () {
+        final server = Server();
+        final client = online();
+        final drawn = client.visible;
+        client.edit(elementDelete('del'));
+        sendAndAnswer(client, server, ['del']);
+        client.clock = client.at.add(const Duration(days: 28));
+        client.edit(putBackOf('back', drawn, 'e1'));
+        server.rows = purged(server.rows);
+        client.read(server.rows);
+        client.clock = client.at.add(const Duration(days: 2));
+        expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+        expect(client.view('back').sendable, isFalse);
+      });
+
+      test('with no delete of mine on record, it is asked, not sent', () {
+        final server = Server();
+        final client = online();
+        final drawn = client.visible;
+        server.rows = withOp(server.rows, elementDelete('theirs'));
+        client.read(server.rows);
+        client.edit(putBackOf('back', drawn, 'e1'));
+        server.rows = purged(server.rows);
+        client.read(server.rows);
+        expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+      });
+
+      test('inside my delete\'s resend window it is asked too, because the '
+          'result that shows its page gone also retires my delete, the '
+          'evidence a put-back is sent on', () {
+        final server = Server();
+        final client = online();
+        final drawn = client.visible;
+        client.edit(elementDelete('del'));
+        sendAndAnswer(client, server, ['del']);
+        client.edit(putBackOf('back', drawn, 'e1'));
+        expect(client.queue.landed, isNotEmpty);
+        server.rows = purged(server.rows);
+        client.read(server.rows);
+        expect(client.queue.landed, isEmpty);
+        expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+      });
+    },
+  );
 
   group('what makes held results stale', () {
     test('a move\'s answer resets its source page even when the '

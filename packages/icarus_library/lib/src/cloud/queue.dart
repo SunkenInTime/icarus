@@ -2515,11 +2515,6 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (!entry.behindOwn) return _NameAt(authored);
       return _wholeBehindOwn(queue, entry, row, authored);
     case _Writes.putBack:
-      if (entry.scope case OnPage(
-        :final pagePublicId,
-      ) when _pageGone(queue.shown, pagePublicId)) {
-        return _NameAt(authored);
-      }
       final seen = entry.authored;
       final delete = queue.landed
           .where(
@@ -2538,6 +2533,15 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
             when revision == authored && digest == seen.digest =>
           _NameAt(authored, until: until),
         _KnownRow(current: true) => const _AskUser(),
+        _
+            when switch (entry.scope) {
+              OnPage(:final pagePublicId) => _pageGone(
+                queue.shown,
+                pagePublicId,
+              ),
+              _ => false,
+            } =>
+          _NameAt(authored, until: until),
         _KnownRow(:final page) => _AwaitRow(page, until: until),
         _ => _AwaitRow(switch (entry.scope) {
           OnPage(:final pagePublicId) => pagePublicId,
