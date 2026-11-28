@@ -245,8 +245,8 @@ void main() {
           attempt,
           const FailedAnswer(
             'move',
-            KnownFailure(FailureCode.pageDeleted),
-            'gone',
+            KnownFailure(FailureCode.invalidPayload),
+            'bad',
           ),
           point: tick(),
         ),
@@ -257,7 +257,7 @@ void main() {
           (state) => state.reason,
           'reason',
           const RefusedByServer(
-            FailedOnServer(KnownFailure(FailureCode.pageDeleted), 'gone'),
+            FailedOnServer(KnownFailure(FailureCode.invalidPayload), 'bad'),
           ),
         ),
       );

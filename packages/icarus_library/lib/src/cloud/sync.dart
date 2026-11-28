@@ -10,6 +10,7 @@ enum Attention {
   oversized,
   changedUnseen,
   pageGone,
+  refusedAsPageDeleted,
   serverForgotAnswer,
   writtenLongAgo,
   heldPageDelete,

@@ -25,6 +25,7 @@ enum Kind {
   oversized,
   changedUnseen,
   rowPageGone,
+  refusedAsPageDeleted,
   retired,
 }
 
@@ -45,6 +46,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       Oversized() => Kind.oversized,
       ChangedUnseen() => Kind.changedUnseen,
       RowPageGone() => Kind.rowPageGone,
+      RefusedAsPageDeleted() => Kind.refusedAsPageDeleted,
       RetiredFormat() => Kind.retired,
     },
     Waiting() || Unanswered() || RefusedAgain()
@@ -205,7 +207,13 @@ final rows = <Row>[
     ),
   ),
   Row(
-    'needs user: failed on the server with PAGE_DELETED',
+    'needs user: failed on the server with INTERNAL_ERROR',
+    () => answered(
+      FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
+    ),
+  ),
+  Row(
+    'needs user: refused because its page was deleted',
     () => answered(
       const FailedAnswer('x', KnownFailure(FailureCode.pageDeleted), 'deleted'),
     ),
@@ -374,6 +382,11 @@ final events = <String, QueueEvent Function(Client)>{
       RejectedAnswer('x', reason, const NoServerCopy()),
       point: tick(),
     ),
+  'failed: PAGE_DELETED': (c) => OpAnswered(
+    1,
+    const FailedAnswer('x', KnownFailure(FailureCode.pageDeleted), 'deleted'),
+    point: tick(),
+  ),
   'failed: INTERNAL_ERROR': (c) => OpAnswered(
     1,
     FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
