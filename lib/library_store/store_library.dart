@@ -236,6 +236,11 @@ final class _NotCommitted extends _Commit {
   final bool mayHaveLanded;
 }
 
+_Commit _removalOf(LibraryEditResult result) => switch (result) {
+      Refused(reason: NoSuchStrategy()) => const _Committed(),
+      _ => _commitOf(result),
+    };
+
 _Commit _commitOf(LibraryEditResult result) => switch (result) {
       Saved() || NothingToSave() => const _Committed(),
       Refused(:final reason) =>
@@ -533,9 +538,8 @@ final class StoreLibrary {
     Future<_Commit> remove() async => switch (_store.library) {
           LibraryShut(:final failure) =>
             _NotCommitted('the store is shut: $failure'),
-          LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
           LibraryOpen() =>
-            _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
+            _removalOf(await _store.editLibrary([RemoveStrategy(id)])),
         };
     return _write(
       show: show,
@@ -587,12 +591,19 @@ final class StoreLibrary {
           for (final row in list.folders)
             if (going.contains(row.publicId)) row,
         ];
-        if (asked.isEmpty && rows.isEmpty) return const _Committed();
-        return _commitOf(await _store.editLibrary([
-          for (final id in asked) RemoveStrategy(id),
-          for (final row in folderRowsChildrenFirst(rows))
-            RemoveFolder(row.publicId),
-        ]));
+        final removing = {...strategyIds};
+        while (true) {
+          final result = await _store.editLibrary([
+            for (final id in removing) RemoveStrategy(id),
+            for (final row in folderRowsChildrenFirst(rows))
+              RemoveFolder(row.publicId),
+          ]);
+          if (result case Refused(reason: NoSuchStrategy(:final strategyPublicId))
+              when removing.remove(strategyPublicId)) {
+            continue;
+          }
+          return _commitOf(result);
+        }
       }),
     );
   }
