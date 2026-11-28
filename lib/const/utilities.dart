@@ -624,11 +624,10 @@ class CustomRectangleUtility extends Utilities {
       double? widthMeters,
       double? rectLengthMeters}) {
     assert(mapScale != null, 'mapScale must be provided');
-    assert(widthMeters != null, 'widthMeters must be provided');
-    assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
-    final width = widthMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    if (widthMeters == null || rectLengthMeters == null) return Offset.zero;
+    final width = widthMeters * AgentData.inGameMetersDiameter * mapScale!;
     final rectLength =
-        rectLengthMeters! * AgentData.inGameMetersDiameter * mapScale;
+        rectLengthMeters * AgentData.inGameMetersDiameter * mapScale;
     return Offset(rectLength / 2, width / 2);
   }
 
