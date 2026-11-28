@@ -45,31 +45,47 @@ final class StoreOwnedSave {
       );
 }
 
-StoreAheadOfServer storeAheadOfServerOf(SummarySync sync) => switch (sync) {
-      KeptInCloud(:final tally) => _aheadBy(tally),
+StoreAheadOfServer storeAheadOfServerOf(SummarySync sync, SignedIn signedIn) =>
+    switch (sync) {
+      KeptInCloud(:final owner, :final tally) => switch (syncStateOf(
+          owner,
+          tally,
+          network: Network.online,
+          signedIn: signedIn,
+        )) {
+          AllSaved() => const StoreMatchesServer(),
+          Outstanding(:final face, :final tally) => switch (face) {
+              Face.offline ||
+              Face.answerUnknown ||
+              Face.sending ||
+              Face.awaitingResult =>
+                StoreSending(tally.unsentWork),
+              Face.ownerUnreadable ||
+              Face.signedOut ||
+              Face.heldForAnotherAccount ||
+              Face.notThisAccount ||
+              Face.deletedOnServer ||
+              Face.editAccessLost ||
+              Face.unreadableWork ||
+              Face.strategyReplaced ||
+              Face.needsYou ||
+              Face.upgradeRequired =>
+                StoreNeedsUser(tally.unsentWork),
+            },
+        },
       CloudUnverified() || KeptHere() => const StoreUnverified(),
     };
-
-StoreAheadOfServer _aheadBy(Tally tally) {
-  int total(Iterable<int> counts) => counts.fold(0, (sum, n) => sum + n);
-  final waiting = total(tally.waiting.values);
-  final stuck = total(tally.attention.values) + tally.unreadable;
-  if (stuck > 0 || (waiting > 0 && tally.standing != Standing.good)) {
-    return StoreNeedsUser(stuck + waiting);
-  }
-  if (waiting > 0) return StoreSending(waiting);
-  return const StoreMatchesServer();
-}
 
 StreamSubscription<StoreChange> feedStoreAheadOfServer(
   LibraryStore store,
   String strategyPublicId,
+  SignedIn signedIn,
   void Function(StoreAheadOfServer ahead) note,
 ) {
   if (store.library case LibraryOpen(:final list)) {
     for (final summary in list.strategies) {
       if (summary.publicId == strategyPublicId) {
-        note(storeAheadOfServerOf(summary.sync));
+        note(storeAheadOfServerOf(summary.sync, signedIn));
       }
     }
   }
@@ -77,11 +93,11 @@ StreamSubscription<StoreChange> feedStoreAheadOfServer(
     switch (change) {
       case StrategyEdited(:final summary) || StrategyRefreshed(:final summary)
           when summary.publicId == strategyPublicId:
-        note(storeAheadOfServerOf(summary.sync));
+        note(storeAheadOfServerOf(summary.sync, signedIn));
       case LibraryEdited(:final summaries):
         for (final summary in summaries) {
           if (summary.publicId == strategyPublicId) {
-            note(storeAheadOfServerOf(summary.sync));
+            note(storeAheadOfServerOf(summary.sync, signedIn));
           }
         }
       case StrategyRefused(strategyPublicId: final refused)

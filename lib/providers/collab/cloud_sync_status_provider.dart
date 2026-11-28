@@ -49,9 +49,41 @@ final editorShownCopyProvider = Provider<({DateTime? copiedAt})?>((ref) {
   return (copiedAt: page?.copiedAt);
 });
 
+typedef _QueueFacts = ({
+  bool needsAttention,
+  String? error,
+  bool isSending,
+  bool hasWorkWaiting,
+  bool durableLoaded,
+});
+
 final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
+  if (saveState.storeOwned case final owned?) {
+    return _cloudSyncStatus(ref, saveState, (
+      needsAttention: owned.storeAheadOfServer is StoreNeedsUser,
+      error: null,
+      isSending: owned.canvasAheadOfStore,
+      hasWorkWaiting: owned.storeAheadOfServer is! StoreMatchesServer,
+      durableLoaded: true,
+    ));
+  }
   final opQueueState = ref.watch(strategyOpQueueProvider);
+  return _cloudSyncStatus(ref, saveState, (
+    needsAttention: opQueueState.needsAttention ||
+        opQueueState.accountOutbox.needsAttention,
+    error: saveState.cloudSyncError,
+    isSending: saveState.isSaving || saveState.hasPendingCloudSync,
+    hasWorkWaiting: opQueueState.accountOutbox.hasWork,
+    durableLoaded: opQueueState.durableLoaded,
+  ));
+});
+
+CloudSyncStatus _cloudSyncStatus(
+  Ref ref,
+  StrategySaveState saveState,
+  _QueueFacts queue,
+) {
   final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
   final strategy = ref.watch(strategyProvider);
   final activeMediaJobs = mediaQueueState.jobsForStrategy(
@@ -73,21 +105,7 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (ref.watch(clientUpgradeRequiredProvider)) {
     return CloudSyncStatus.attention;
   }
-  if (saveState.storeOwned case final owned?) {
-    return _storeOwnedSyncStatus(
-      owned,
-      mediaErrors: saveState.mediaSyncErrorCount + accountMediaErrorCount,
-      mediaWaiting: saveState.hasPendingMediaSync ||
-          activeMediaJobs.isNotEmpty ||
-          mediaQueueState.jobs.isNotEmpty ||
-          !mediaQueueState.durableLoaded,
-      isConnected: isConnected,
-      sessionStatus: sessionStatus,
-      hasTextDrafts: hasTextDrafts,
-    );
-  }
-  if (opQueueState.needsAttention ||
-      opQueueState.accountOutbox.needsAttention ||
+  if (queue.needsAttention ||
       saveState.mediaSyncErrorCount > 0 ||
       accountMediaErrorCount > 0) {
     return CloudSyncStatus.attention;
@@ -106,19 +124,18 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (sessionStatus == ConvexAuthStatus.incident) {
     return CloudSyncStatus.attention;
   }
-  if (saveState.cloudSyncError != null) {
+  if (queue.error != null) {
     return CloudSyncStatus.attention;
   }
   if (hasTextDrafts) {
     return CloudSyncStatus.editing;
   }
-  if (saveState.isSaving ||
-      saveState.hasPendingCloudSync ||
+  if (queue.isSending ||
       saveState.hasPendingMediaSync ||
       activeMediaJobs.isNotEmpty ||
-      opQueueState.accountOutbox.hasWork ||
+      queue.hasWorkWaiting ||
       mediaQueueState.jobs.isNotEmpty ||
-      !opQueueState.durableLoaded ||
+      !queue.durableLoaded ||
       !mediaQueueState.durableLoaded) {
     return CloudSyncStatus.syncing;
   }
@@ -128,35 +145,6 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
     return CloudSyncStatus.syncing;
   }
   return CloudSyncStatus.synced;
-});
-
-CloudSyncStatus _storeOwnedSyncStatus(
-  StoreOwnedSave owned, {
-  required int mediaErrors,
-  required bool mediaWaiting,
-  required bool isConnected,
-  required ConvexAuthStatus? sessionStatus,
-  required bool hasTextDrafts,
-}) {
-  if (owned.storeAheadOfServer is StoreNeedsUser || mediaErrors > 0) {
-    return CloudSyncStatus.attention;
-  }
-  if (!isConnected || sessionStatus == ConvexAuthStatus.offline) {
-    return CloudSyncStatus.offline;
-  }
-  if (sessionStatus == ConvexAuthStatus.incident) {
-    return CloudSyncStatus.attention;
-  }
-  if (hasTextDrafts) return CloudSyncStatus.editing;
-  if (owned.canvasAheadOfStore || mediaWaiting) return CloudSyncStatus.syncing;
-  if (sessionStatus != null && sessionStatus != ConvexAuthStatus.ready) {
-    return CloudSyncStatus.syncing;
-  }
-  return switch (owned.storeAheadOfServer) {
-    StoreMatchesServer() => CloudSyncStatus.synced,
-    StoreSending() || StoreUnverified() || StoreNeedsUser() =>
-      CloudSyncStatus.syncing,
-  };
 }
 
 /// How many outbox records of the open cloud strategy, for the signed-in

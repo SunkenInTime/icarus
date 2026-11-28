@@ -453,11 +453,15 @@ void main() {
     Future<(CloudSyncStatus, int)> chipFor(
       StrategySaveState saveState, {
       bool connected = true,
+      ({DateTime? copiedAt})? shownCopy,
+      CloudMediaUploadQueueState? mediaQueueState,
     }) async {
       final container = _createContainer(
         connected: connected,
         saveState: saveState,
         sessionStatus: ConvexAuthStatus.ready,
+        shownCopy: shownCopy,
+        mediaQueueState: mediaQueueState,
       );
       addTearDown(container.dispose);
       await container.read(convexConnectionProvider.future);
@@ -509,6 +513,47 @@ void main() {
         ))
             .$1,
         CloudSyncStatus.syncing,
+      );
+    });
+
+    test("a page drawn from this computer's copy is not synced", () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          shownCopy: (copiedAt: null),
+        ))
+            .$1,
+        CloudSyncStatus.offline,
+      );
+    });
+
+    test('a media outbox not read back yet is not synced', () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          mediaQueueState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durableLoaded: false,
+          ),
+        ))
+            .$1,
+        CloudSyncStatus.syncing,
+      );
+    });
+
+    test('a media write it could not confirm needs attention', () async {
+      expect(
+        (await chipFor(
+          storeOwned(const StoreMatchesServer()),
+          mediaQueueState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durabilityError: 'Media work could not be saved on this device.',
+          ),
+        ))
+            .$1,
+        CloudSyncStatus.attention,
       );
     });
   });

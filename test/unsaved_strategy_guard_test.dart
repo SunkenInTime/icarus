@@ -264,7 +264,14 @@ class _GuardMediaQueue extends CloudMediaUploadQueueNotifier {
 
   @override
   CloudMediaUploadQueueState build() => initialState;
+
+  void become(CloudMediaUploadQueueState next) => state = next;
 }
+
+const _unreadableImage = DurableCloudMediaOutboxLoadIssue(
+  storageKey: 'account-a|unreadable-image',
+  error: 'bad record',
+);
 
 const _guardEntityKey = EntitySyncKey.strategy();
 const _guardPendingIntent = QueuedEntityIntent(
@@ -1100,12 +1107,17 @@ void main() {
     });
 
     group('a store-owned strategy', () {
+      late _GuardMediaQueue media;
+
       Future<Future<bool>> leaving(
         WidgetTester tester, {
         required StoreAheadOfServer ahead,
         bool canvasAhead = false,
         bool connected = true,
+        CloudMediaUploadQueueState mediaState =
+            const CloudMediaUploadQueueState(jobs: [], isProcessing: false),
       }) async {
+        media = _GuardMediaQueue(mediaState);
         notifier = _FakeGuardStrategyProvider(
           initialState: const StrategyState(
             strategyId: 'cloud-strategy',
@@ -1126,7 +1138,7 @@ void main() {
                 durableLoaded: true,
               )),
             ),
-            cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+            cloudMediaUploadQueueProvider.overrideWith(() => media),
             authProvider.overrideWith(_GuardAuthProvider.new),
             convexConnectionSnapshotProvider.overrideWithValue(connected),
           ],
@@ -1194,6 +1206,146 @@ void main() {
         await tester.tap(find.text('Stay here'));
         await tester.pumpAndSettle();
         expect(await guard, isFalse);
+      });
+
+      CloudMediaUploadJob image({
+        CloudMediaJobPhase phase = const MediaWaitingToUpload(),
+      }) =>
+          CloudMediaUploadJob(
+            jobId: 'image-a',
+            accountId: 'account-a',
+            strategyPublicId: 'cloud-strategy',
+            assetPublicId: 'image-a',
+            fileExtension: '.png',
+            mimeType: 'image/png',
+            phase: phase,
+            updatedAt: DateTime.utc(2026, 9, 3),
+          );
+
+      Future<void> staysAfterAsking(
+        WidgetTester tester,
+        Future<bool> guard,
+      ) async {
+        await tester.tap(find.text('Stay here'));
+        await tester.pumpAndSettle();
+        expect(await guard, isFalse);
+      }
+
+      testWidgets(
+          'a media write it could not confirm holds the player beside '
+          'unreadable records, with the error shown', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreSending(1),
+          mediaState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durabilityError: 'Media work could not be saved on this device.',
+            loadIssues: [_unreadableImage],
+          ),
+        );
+        expect(find.text('Leave anyway'), findsNothing);
+        expect(find.textContaining("haven't reached the cloud yet"),
+            findsOneWidget);
+        expect(find.textContaining('could not confirm that all pending work'),
+            findsOneWidget);
+        await staysAfterAsking(tester, guard);
+      });
+
+      testWidgets(
+          'a media outbox not read back yet holds the player beside '
+          'unreadable records', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreMatchesServer(),
+          mediaState: const CloudMediaUploadQueueState(
+            jobs: [],
+            isProcessing: false,
+            durableLoaded: false,
+            loadIssues: [_unreadableImage],
+          ),
+        );
+        expect(find.text('Leave anyway'), findsNothing);
+        expect(find.textContaining('could not confirm that all pending work'),
+            findsOneWidget);
+        await staysAfterAsking(tester, guard);
+      });
+
+      testWidgets(
+          'unreadable media records can be left, and are said to be kept',
+          (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreMatchesServer(),
+          mediaState: CloudMediaUploadQueueState(
+            jobs: [image()],
+            isProcessing: false,
+            loadIssues: const [_unreadableImage],
+          ),
+        );
+        expect(find.text('Leave anyway'), findsOneWidget);
+        expect(find.textContaining('will not delete'), findsOneWidget);
+        await tester.tap(find.text('Leave anyway'));
+        await tester.pumpAndSettle();
+        expect(await guard, isTrue);
+      });
+
+      testWidgets(
+          'a failed media upload is asked about though the store is '
+          'up to date', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreMatchesServer(),
+          mediaState: CloudMediaUploadQueueState(
+            jobs: [
+              image(
+                phase: const MediaUploadFailed(why: 'refused', attempts: 3),
+              ),
+            ],
+            isProcessing: false,
+          ),
+        );
+        expect(find.text('Stay here'), findsOneWidget);
+        await staysAfterAsking(tester, guard);
+      });
+
+      testWidgets('waits for media being sent before asking', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreMatchesServer(),
+          mediaState: CloudMediaUploadQueueState(
+            jobs: [image()],
+            isProcessing: true,
+          ),
+        );
+        expect(find.text('Stay here'), findsNothing);
+        media.become(
+          const CloudMediaUploadQueueState(jobs: [], isProcessing: false),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pumpAndSettle();
+        expect(find.text('Stay here'), findsNothing);
+        expect(await guard, isTrue);
+      });
+
+      testWidgets(
+          'leave anyway is honoured only if the work is still kept when read '
+          'again', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreSending(1),
+          connected: false,
+        );
+        expect(find.text('Leave anyway'), findsOneWidget);
+        media.become(const CloudMediaUploadQueueState(
+          jobs: [],
+          isProcessing: false,
+          durabilityError: 'Media work could not be saved on this device.',
+        ));
+        await tester.tap(find.text('Leave anyway'));
+        await tester.pumpAndSettle();
+        expect(find.text('Leave anyway'), findsNothing);
+        await staysAfterAsking(tester, guard);
       });
     });
 

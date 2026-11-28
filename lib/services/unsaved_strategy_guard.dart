@@ -160,6 +160,28 @@ Future<bool> _waitForCloudSync(
   return false;
 }
 
+Future<bool> _waitForCloudMedia(
+  WidgetRef ref, {
+  Duration timeout = const Duration(seconds: 8),
+  Duration pollInterval = const Duration(milliseconds: 120),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    final saveState = ref.read(strategySaveStateProvider);
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final mediaJobs = mediaQueueState.jobsForStrategy(strategyId);
+    if (!saveState.hasPendingMediaSync &&
+        mediaJobs.isEmpty &&
+        !mediaQueueState.isProcessing &&
+        saveState.mediaSyncErrorCount == 0) {
+      return true;
+    }
+    await Future<void>.delayed(pollInterval);
+  }
+  return false;
+}
+
 Future<LeaveAnswer> _guardCloudStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
@@ -389,22 +411,42 @@ Future<LeaveAnswer> _guardStoreOwnedExit({
     final saveState = ref.read(strategySaveStateProvider);
     final owned = saveState.storeOwned;
     if (owned == null) return const Stay();
-    final mediaJobs = ref
-        .read(cloudMediaUploadQueueProvider)
-        .jobsForStrategy(ref.read(strategyProvider).strategyId);
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final mediaJobs =
+        mediaQueueState.jobsForStrategy(ref.read(strategyProvider).strategyId);
+    final hasPendingMediaJobs = mediaJobs.isNotEmpty;
     final ahead = owned.storeAheadOfServer;
+    final storeHoldsUnsent = ahead is! StoreMatchesServer;
+    final outboxError = !mediaQueueState.outboxIsReliable
+        ? (mediaQueueState.durabilityError ??
+            'Icarus could not confirm that media work is saved on this device.')
+        : null;
+    final hasPendingSync = storeHoldsUnsent ||
+        saveState.hasPendingMediaSync ||
+        hasPendingMediaJobs;
+    final hasDurablePendingWork = storeHoldsUnsent || hasPendingMediaJobs;
     final unstaged = ref.read(textDraftProvider).isNotEmpty ||
         owned.canvasAheadOfStore ||
         mediaJobs.any((job) => !job.referenceDurable);
-    if (!unstaged &&
-        ahead is StoreMatchesServer &&
-        mediaJobs.isEmpty &&
-        saveState.mediaSyncErrorCount == 0) {
-      return Leave(asked);
-    }
+    final hasUnreadableSavedWork = mediaQueueState.loadIssues.isNotEmpty;
+    final canLeaveWithDurableWork = !unstaged &&
+        mediaQueueState.durableLoaded &&
+        mediaQueueState.durabilityError == null &&
+        ((hasDurablePendingWork && mediaQueueState.outboxIsReliable) ||
+            hasUnreadableSavedWork);
     if (leaveIfKept) {
       leaveIfKept = false;
-      if (!unstaged) return Leave(asked);
+      if (canLeaveWithDurableWork) {
+        if (!context.mounted) return const Stay();
+        return Leave(asked);
+      }
+    }
+    if (!hasPendingSync && outboxError == null && !unstaged) {
+      if (!context.mounted) return const Stay();
+      return Leave(asked);
+    }
+    if (mediaQueueState.isProcessing && outboxError == null) {
+      if (await _waitForCloudMedia(ref)) continue;
     }
     if (!context.mounted) return const Stay();
     final decision = await _showCloudSyncBlockedDialog(
@@ -413,14 +455,14 @@ Future<LeaveAnswer> _guardStoreOwnedExit({
       message: _cloudSyncBlockedMessage(
         l10n: context.l10n,
         isConnected: ref.read(convexConnectionSnapshotProvider),
-        cloudError: null,
+        cloudError: outboxError,
         mediaErrorCount: saveState.mediaSyncErrorCount,
-        canLeaveWithDurableWork: !unstaged,
-        hasUnreadableSavedWork: false,
+        canLeaveWithDurableWork: canLeaveWithDurableWork,
+        hasUnreadableSavedWork: hasUnreadableSavedWork,
         hasRefusedWork: ahead is StoreNeedsUser,
         hasPausedWork: false,
       ),
-      allowLeaveAnyway: !unstaged,
+      allowLeaveAnyway: canLeaveWithDurableWork,
       showRetryAuth: ref.read(authProvider).hasActiveAuthIncident,
     );
     switch (decision) {

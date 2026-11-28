@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/painting.dart' show Offset, Size;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -157,6 +159,118 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
 
+  group('store ahead of server is the package\'s own answer', () {
+    final owners = [OwnedBy(servedAccount), const OwnerUnreadable()];
+    final signIns = [
+      SignedInAs(servedAccount),
+      SignedInAs(otherAccount),
+      const SignedOut(),
+    ];
+
+    void agreesWithThePackage(Tally tally) {
+      for (final owner in owners) {
+        for (final signedIn in signIns) {
+          final package = syncStateOf(
+            owner,
+            tally,
+            network: Network.online,
+            signedIn: signedIn,
+          );
+          final app = storeAheadOfServerOf(KeptInCloud(owner, tally), signedIn);
+          expect(
+            app is StoreMatchesServer,
+            package is AllSaved,
+            reason: '$tally owned by $owner for $signedIn: '
+                'the package says $package, the app $app',
+          );
+        }
+      }
+    }
+
+    Tally generated(Random random) {
+      int some() => random.nextInt(4) == 0 ? random.nextInt(3) + 1 : 0;
+      return Tally(
+        standing: Standing.values[random.nextInt(4) == 0
+            ? random.nextInt(Standing.values.length)
+            : 0],
+        waiting: {for (final why in Underway.values) why: some()},
+        attention: {for (final why in Attention.values) why: some()},
+        unreadable: some(),
+        readsOwed: some(),
+        readsRefused: some(),
+        setAside: some(),
+        notYetRead: some(),
+      );
+    }
+
+    test('over generated tallies, matches the server only when all is saved',
+        () {
+      final random = Random(892);
+      for (var i = 0; i < 3000; i++) {
+        agreesWithThePackage(generated(random));
+      }
+      agreesWithThePackage(Tally.empty);
+    });
+
+    test('edits set aside alone are not matching the server', () {
+      final tally = Tally(standing: Standing.good, setAside: 1);
+      agreesWithThePackage(tally);
+      expect(
+        storeAheadOfServerOf(
+          KeptInCloud(OwnedBy(servedAccount), tally),
+          SignedInAs(servedAccount),
+        ),
+        isA<StoreNeedsUser>(),
+      );
+    });
+
+    test('a refused read alone is not matching the server', () {
+      final tally = Tally(standing: Standing.good, readsRefused: 1);
+      agreesWithThePackage(tally);
+      expect(
+        storeAheadOfServerOf(
+          KeptInCloud(OwnedBy(servedAccount), tally),
+          SignedInAs(servedAccount),
+        ),
+        isA<StoreNeedsUser>(),
+      );
+    });
+
+    for (final standing in Standing.values.where((s) => s != Standing.good)) {
+      test(
+          'standing ${standing.name} with nothing waiting is not matching '
+          'the server', () {
+        final tally = Tally(standing: standing);
+        agreesWithThePackage(tally);
+        expect(
+          storeAheadOfServerOf(
+            KeptInCloud(OwnedBy(servedAccount), tally),
+            SignedInAs(servedAccount),
+          ),
+          isA<StoreNeedsUser>(),
+        );
+      });
+    }
+
+    test('counts what the package calls unsent work', () {
+      final tally = Tally(
+        standing: Standing.good,
+        waiting: {Underway.unsent: 2},
+        unreadable: 1,
+        setAside: 1,
+        readsOwed: 4,
+      );
+      expect(
+        storeAheadOfServerOf(
+          KeptInCloud(OwnedBy(servedAccount), tally),
+          SignedInAs(servedAccount),
+        ),
+        isA<StoreNeedsUser>()
+            .having((ahead) => ahead.ops, 'ops', tally.unsentWork),
+      );
+    });
+  });
+
   group('store ahead of server', () {
     StrategySaveStateNotifier fedFrom(World world, ProviderContainer c) {
       final notifier = c.read(strategySaveStateProvider.notifier)
@@ -164,6 +278,7 @@ void main() {
       final feed = feedStoreAheadOfServer(
         world.store,
         strategyId,
+        SignedInAs(servedAccount),
         notifier.noteStoreAheadOfServer,
       );
       addTearDown(feed.cancel);
