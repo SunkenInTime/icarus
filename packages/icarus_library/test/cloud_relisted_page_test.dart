@@ -55,6 +55,22 @@ void main() {
       expect(itemsOnA(client), isNotEmpty);
     });
 
+    test('known behaviour, not the fixed case: with the list that brought '
+        'the page back delivered first and the older list that left it out '
+        'dropped as older, the read from before it left fills the page with '
+        'its items, held as any page read older than its list is, and a later '
+        'read replaces them', () {
+      final client = relisted([back, leftOut, before]);
+      expect(client.queue.shown.content, contains('page-a'));
+      expect(itemsOnA(client), isNotEmpty);
+      final later = withOp(
+        initialRows(),
+        elementAdd('their-add', elementId: 'e9', pageId: 'page-a'),
+      );
+      client.must(arrivalAt(client, pageReadOf(later, 'page-a'), pointAt(21)));
+      expect(itemsOnA(client), contains(const ElementTarget('e9')));
+    });
+
     test('a page read newer than that list still fills the page', () {
       final client = relisted([leftOut, back, (pageA(), 21)]);
       expect(client.queue.shown.content, contains('page-a'));
