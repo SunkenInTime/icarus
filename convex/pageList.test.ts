@@ -597,6 +597,32 @@ describe("strategy:getPageList with includeTrashed", () => {
     expect(throughLink.trashedPages).toEqual([]);
   });
 
+  test("an editor link that was never redeemed gets none, signed in or out", async () => {
+    const { t, users } = await createHarness();
+    await addPage(users.owner, "page-2", 1);
+    await deletePage(users.owner, "page-2");
+    const shareToken = "unredeemed-edit-link";
+    await users.owner.mutation(createShare, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: shareToken,
+      role: "editor",
+    });
+
+    expect((await listWithTrash(users.owner, true)).trashedPages).toHaveLength(1);
+    for (const who of [t, users.stranger]) {
+      const throughLink = (await who.query(getPageList, {
+        ...protocol,
+        strategyPublicId,
+        shareToken,
+        includeTrashed: true,
+      })) as PageList;
+      expect(throughLink.header.role).toBe("viewer");
+      expect(throughLink.trashedPages).toEqual([]);
+    }
+  });
+
   test("a page is sent while its row lives, restorable until its time in the trash is up, then gone once purged", async () => {
     vi.useFakeTimers();
     const { t, users } = await createHarness();
