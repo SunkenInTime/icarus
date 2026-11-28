@@ -16,8 +16,6 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/image_file_name.dart';
 import 'package:icarus/startup/app_instance.dart';
-import 'package:icarus/library_store/library_store_start.dart';
-import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/strategy/export_strategy_reads.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -233,8 +231,7 @@ void main() {
   });
 
   test('with the store switched off, exports read strategies from Hive', () {
-    final start = LibraryStoreStart.of(const StoreSwitchOff());
-    final off = ProviderContainer(overrides: start.overrides);
+    final off = ProviderContainer();
     addTearDown(off.dispose);
 
     expect(off.read(exportStrategyReadsProvider), isA<HiveExportReads>());

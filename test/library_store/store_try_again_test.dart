@@ -8,7 +8,6 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -160,7 +159,7 @@ void main() {
     if (cloud) {
       beginCloudSender(
         container,
-        (opening: opening, localShadow: false, cloudSends: true),
+        (opening: opening, cloudSends: true),
         build: 'b',
       );
       await _until(
@@ -359,7 +358,7 @@ void main() {
       );
       beginCloudSender(
         container,
-        (opening: opening, localShadow: false, cloudSends: true),
+        (opening: opening, cloudSends: true),
         build: 'b',
       );
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -446,7 +445,6 @@ void main() {
       container,
       launch([LibraryStoreLaunch.offFlag, LibraryStoreLaunch.cloudSendFlag]),
       hiveDirectory: directory.path,
-      allowsLocalLibrary: true,
       build: 'b',
     );
     beginCloudSender(container, stores, build: 'b');
@@ -466,34 +464,6 @@ void main() {
     expect(onStore(), isNull);
     expect(shown(), ['a']);
     expect(_lossReports(), [contains('a cloud write for $strategyId')]);
-  });
-
-  test(
-      'in shadow mode a store write whose answer is lost leaves the Hive '
-      'library served', () async {
-    final stores = openStores(
-      container,
-      launch([LibraryStoreLaunch.shadowFlag]),
-      hiveDirectory: directory.path,
-      allowsLocalLibrary: true,
-      build: 'b',
-    );
-    await stores.opening;
-    final rows = switch (strategyToRows(_strategy('x'))) {
-      StrategyRowsMade(:final rows) => rows,
-      StrategyRowsRefused(:final problems) => fail('$problems'),
-    };
-    gate.doubtNext = true;
-
-    expect(
-      await store().putStrategy(rows, writtenAt: Settings.versionNumber),
-      isA<SaveInDoubt<Object?, Object?>>(),
-    );
-
-    expect(store().library, isA<LibraryShut>());
-    expect(LocalLibrary.source, isA<LibraryInHive>());
-    expect(onStore(), isNull);
-    expect(shown(), ['a']);
   });
 
   testWidgets(

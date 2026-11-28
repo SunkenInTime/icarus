@@ -8,7 +8,7 @@ import 'package:icarus_library/sqlite_storage.dart';
 import 'package:icarus_library/take_cost.dart';
 
 import '../library_rows/library_sources.dart';
-import 'shadow_copy_corpus_test.dart' show corpusVariable;
+import 'store_corpus_test.dart' show corpusVariable;
 
 const _build = 'cloud-open-cost';
 const _life = 1767326400000;

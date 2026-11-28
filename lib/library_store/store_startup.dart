@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -8,7 +10,6 @@ import 'package:icarus_library/icarus_library.dart' show LibraryStore;
 
 typedef StoreStartup = ({
   Future<LibraryStoreOpened>? opening,
-  bool localShadow,
   bool cloudSends,
 });
 
@@ -16,24 +17,19 @@ StoreStartup openStores(
   ProviderContainer container,
   LibraryStoreLaunch launch, {
   required String? hiveDirectory,
-  required bool allowsLocalLibrary,
   required String build,
   Future<LibraryStoreOpened>? alreadyOpening,
 }) {
-  final localShadow = launch.choice is! StoreSwitchOff &&
-      launch.choice is! StoreSwitchStore &&
-      allowsLocalLibrary;
   final cloudSends = launch.cloud is CloudStoreSend;
   return (
     opening: alreadyOpening ??
         switch (hiveDirectory) {
-          final String directory when localShadow || cloudSends => container
+          final String directory when cloudSends => container
               .read(libraryStoreProvider.notifier)
               .open(libraryStoreFile(directory),
                   build: cloudSends ? build : ''),
           _ => null,
         },
-    localShadow: localShadow,
     cloudSends: cloudSends,
   );
 }
@@ -47,7 +43,6 @@ void beginCloudSender(
       case (
         opening: final opening?,
         cloudSends: true,
-        localShadow: _,
       )) {
     unawaited(
       container.read(cloudSenderProvider.notifier).noteOpening(opening),
@@ -67,4 +62,16 @@ void beginCloudSender(
       fireImmediately: true,
     );
   }
+}
+
+Future<void> storeClosesBeforeExit(ProviderContainer container) =>
+    container.read(libraryStoreProvider.notifier).close();
+
+void closeLibraryStoreOnExit(ProviderContainer container) {
+  AppLifecycleListener(
+    onExitRequested: () async {
+      await storeClosesBeforeExit(container);
+      return ui.AppExitResponse.exit;
+    },
+  );
 }

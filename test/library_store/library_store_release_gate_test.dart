@@ -69,7 +69,8 @@ List<String> _imports(ParsedUnitResult unit) => [
 
 void main() {
   test(
-      'the release entry point can reach shadow only through a compile-time define or a debug build',
+      'the release entry point can reach the library store and the cloud '
+      'sender only through a compile-time define or a debug build',
       () async {
     final collection = AnalysisContextCollection(
       includedPaths: [p.join(Directory.current.path, 'lib')],

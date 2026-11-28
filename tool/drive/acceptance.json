@@ -1,14 +1,4 @@
 {
-  "replaced": {
-    "reason": "tests a mode the store replaces",
-    "scripts": [
-      "library-store-shadow",
-      "library-store-shadow-hidden",
-      "library-store-mirror-hold",
-      "read-back-cost",
-      "read-back-budget"
-    ]
-  },
   "notOnLinux": {
     "close-with-video-open": "the video player is a web view, which the Linux build does not have",
     "close-after-video-dismissed": "the video player is a web view, which the Linux build does not have",

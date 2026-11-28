@@ -25,7 +25,6 @@ void main() {
         container,
         LibraryStoreLaunch.parse(const [], mayShadow: true),
         hiveDirectory: directory.path,
-        allowsLocalLibrary: true,
         build: 'b',
       );
       beginCloudSender(container, stores, build: 'b');
@@ -39,23 +38,28 @@ void main() {
       expect(container.exists(cloudSenderProvider), isFalse);
     });
 
-    test('the library store flag alone opens the store, still with no sender',
-        () async {
+    test(
+        'the library on the store opens the store through its move, still '
+        'with no sender', () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);
+      final moving = container
+          .read(libraryStoreProvider.notifier)
+          .open(libraryStoreFile(directory.path));
       final stores = openStores(
         container,
         LibraryStoreLaunch.parse(
-          const ['--library-store=shadow'],
+          const ['--library-store=store'],
           mayShadow: true,
         ),
         hiveDirectory: directory.path,
-        allowsLocalLibrary: true,
         build: 'b',
+        alreadyOpening: moving,
       );
       beginCloudSender(container, stores, build: 'b');
-      await stores.opening;
 
+      expect(stores.opening, same(moving));
+      await stores.opening;
       expect(container.exists(cloudSenderProvider), isFalse);
       await container.read(libraryStoreProvider.notifier).close();
     });

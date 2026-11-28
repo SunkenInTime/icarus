@@ -11,16 +11,12 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
-import 'package:icarus/library_store/library_store_open.dart';
-import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/strategy/strategy_models.dart';
-import 'package:icarus_library/sqlite_storage.dart';
 import 'package:path/path.dart' as path;
 
 import 'hive_scratch.dart';
 
 const compareVariable = 'ICARUS_COMPARE_RUNS';
-const checkVariable = 'ICARUS_CHECK_RUNS';
 const scratchVariable = 'ICARUS_LIBRARY_SCRATCH';
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 final _uuid = RegExp(
@@ -95,29 +91,6 @@ Future<String> _savedLibrary(String run) async {
   }
 }
 
-Future<String> _checkRun(String run) async {
-  final scratch = await _openRun(run);
-  try {
-    final engine = SqliteEngine(libraryStoreFile(scratch.path).path);
-    final store = await openStoreOn(engine);
-    final check = await checkFromHive(store);
-    await store.close();
-    await engine.close();
-    return switch (check) {
-      StoreNotChecked(:final failure) => 'not checked: $failure',
-      StoreChangedDuringCheck() => 'not exact: Hive changed during the check',
-      StoreCheckCancelled() => 'cancelled',
-      final StoreChecked checked => checked.isExact
-          ? 'exact: ${checked.sameStrategies} strategies, '
-              '${checked.sameFolders} folders'
-          : 'not exact: ${checked.strategyProblems} '
-              '${checked.folderProblems} ${checked.foreignNames}',
-    };
-  } finally {
-    await _closeRun(scratch);
-  }
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() {
@@ -143,22 +116,6 @@ void main() {
         if (!same) differing.add(pair);
       }
       expect(differing, isEmpty);
-    },
-  );
-
-  final runs = Platform.environment[checkVariable];
-  test(
-    'the store a driver run left is exact against its Hive library, without copying first',
-    skip: runs == null ? '$checkVariable lists run folders, a;b' : false,
-    timeout: const Timeout(Duration(hours: 1)),
-    () async {
-      final inexact = <String>[];
-      for (final run in runs!.split(';')) {
-        final result = await _checkRun(run);
-        debugPrint('${path.basename(run)}: $result');
-        if (!result.startsWith('exact')) inexact.add(run);
-      }
-      expect(inexact, isEmpty);
     },
   );
 }

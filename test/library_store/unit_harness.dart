@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -9,35 +8,24 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/library_store/hive_reads.dart';
-import 'package:icarus/library_store/library_box_writes.dart';
-import 'package:icarus/library_store/library_store_open.dart';
-import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus_library/icarus_library.dart' hide UserAction;
 import '../opens_now_support.dart';
 
 final class UnitHarness {
-  UnitHarness._(this.container, this.mirror, this.store);
+  UnitHarness._(this.container);
 
   final ProviderContainer container;
-  final StoreMirror mirror;
-  final LibraryStore store;
 
   Future<void> settle() async {
     for (var turn = 0; turn < 6; turn++) {
       await Future<void>.delayed(Duration.zero);
-      await mirror.drained();
     }
   }
 
   Future<void> dispose() async {
     container.read(strategyProvider.notifier).cancelPendingSave();
-    LocalLibrary.follower = null;
-    await store.close();
   }
 }
 
@@ -64,32 +52,12 @@ Future<Directory> openUnitHive() async {
 
 Future<UnitHarness> openInEditor(
   ProviderContainer container,
-  StrategyData strategy, {
-  bool follow = true,
-  StorageEngine Function(StorageEngine memory)? engine,
-  Future<void> Function()? betweenSteps,
-}) async {
+  StrategyData strategy,
+) async {
   final migrated = StrategyMigrator.migrateToCurrentVersion(strategy);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
       .put(migrated.id, migrated);
-  final mirror = StoreMirror(
-    reads: HiveReads(),
-    betweenAnimations: betweenSteps ?? () => Future<void>.value(),
-  );
-  LocalLibrary.follower = mirror;
-  final store = switch (await LibraryStore.open(
-    (engine ?? (memory) => memory)(MemoryEngine(MemoryStorage())),
-    canRead: appCanRead,
-  )) {
-    StoreOpened(:final store) => store,
-    StoreNotOpened(:final problem) => fail('$problem'),
-  };
-  if (follow) {
-    final writes = LibraryBoxWrites();
-    await mirror.copyThenFollow(store, writes: writes);
-    await writes.stop();
-  }
-  final harness = UnitHarness._(container, mirror, store);
+  final harness = UnitHarness._(container);
   expect(
     await container.read(strategyProvider.notifier).loadFromHive(migrated.id),
     isTrue,

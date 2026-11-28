@@ -388,15 +388,6 @@ Future<void> _play(String script) async {
       _log('FAIL checking items: $error');
     }
     _logScreensIfChanged('step $_steps');
-    switch (await mirrorDrained(appProviderContainer)) {
-      case MirrorWait.drained:
-        _logScreensIfChanged('step $_steps after the mirror drained');
-      case MirrorWait.stillBusy:
-        _failedSteps++;
-        _log('FAIL step $_steps: the mirror had not drained 30 s after it');
-      case MirrorWait.notMirroring:
-        break;
-    }
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
@@ -408,12 +399,6 @@ Future<void> _play(String script) async {
   _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
-  try {
-    (await mirrorEndLines(appProviderContainer)).forEach(_log);
-  } on StoreStepFailed catch (failed) {
-    _failedSteps++;
-    failed.problems.forEach(_log);
-  }
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
   int counted(String what) => refusals.where((r) => r.what == what).length;
@@ -916,7 +901,6 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
       (w) => _isText(w, target.name),
       what: 'the tile of ${target.name}',
     );
-    final mirrorAtStart = mirrorPhaseNow(c);
     final pointer = _pointer++;
     final binding = GestureBinding.instance;
     _addMouse(pointer, tile);
@@ -969,7 +953,7 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     _log(
       'OPENFRAME run $run, $label: built ${ms(submittedAt!)} ms, painted '
       '${ms(submittedAt! + raster)} ms after the pointer-up '
-      '(that frame rasterised in ${ms(raster)} ms), mirror $mirrorAtStart'
+      '(that frame rasterised in ${ms(raster)} ms)'
       '${ahead == null ? '' : ', an open of ${ahead.pages.length} pages and ${_itemsIn(ahead)} items started at the press'}',
     );
     await _seconds(1);
@@ -1939,18 +1923,6 @@ Future<void> _run(Map<String, dynamic> step) async {
   switch (name) {
     case 'wait':
       await _seconds(value as num);
-    case 'libraryStore':
-      final lines = await _storeLines(
-        waitForShadowStore(
-          c,
-          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
-          expected: {...?(step['expect'] as Map<String, dynamic>?)},
-          hidden: step['hidden'] == true,
-        ),
-      );
-      lines.forEach(_log);
-    case 'expectStoreRefuses':
-      storeRefusalsExpected = {...(value as List).cast<String>()};
     case 'watchLibraryText':
       _pictureWatches.add(
         _watchLibraryText(
@@ -1960,8 +1932,6 @@ Future<void> _run(Map<String, dynamic> step) async {
           seconds: (step['seconds'] ?? 10) as num,
         ),
       );
-    case 'holdLibraryStore':
-      _log(holdStore(c));
     case 'expectMigration':
       final expected = {...?(value as Map<String, dynamic>?)};
       bool matches() {
@@ -1983,8 +1953,6 @@ Future<void> _run(Map<String, dynamic> step) async {
         Future.sync(() => migrationLines(c, expected: expected)),
       ))
           .forEach(_log);
-    case 'checkLibraryStore':
-      (await _storeLines(checkStoreAgain(c))).forEach(_log);
     case 'slowStoreCommits':
       SlowedEngine.commitDelay = Duration(milliseconds: (value as num).round());
       _log(
@@ -2650,25 +2618,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _openFirstFrame(step);
     case 'loadCopyCost':
       (await loadCopyCost(value as String, (step['runs'] ?? 51) as int))
-          .forEach(_log);
-    case 'readBackCost':
-      final budget = step['budget'] as Map<String, dynamic>?;
-      (await _storeLines(readBackCost(
-        value as String,
-        (step['runs'] ?? 21) as int,
-        budget: budget == null
-            ? null
-            : ReadBackBudget(
-                longestStepMs: budget['longestStepMs'] as num,
-                addedPerSaveMs: budget['addedPerSaveMs'] as num,
-              ),
-      )))
-          .forEach(_log);
-    case 'readBackFrames':
-      (await _storeLines(readBackFrames(
-        value as String,
-        longestStepMs: step['longestStepMs'] as num?,
-      )))
           .forEach(_log);
     case 'pageTakeCost':
       final budget = step['budget'] as Map<String, dynamic>?;

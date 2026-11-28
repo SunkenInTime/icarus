@@ -6,14 +6,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/library_store/hive_library.dart';
-import 'package:icarus/library_store/hive_reads.dart';
-import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
-import 'package:icarus/library_store/mirror_gate.dart';
-import 'package:icarus/library_store/shadow_copy.dart';
-import 'package:icarus/library_store/store_check.dart';
-import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
@@ -36,11 +29,6 @@ Future<Directory> openScratchHive(
   }
   return directory;
 }
-
-HiveLibrary hiveLibraryNow() => HiveLibrary(
-      strategies: Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
-      folders: Hive.box<Folder>(HiveBoxNames.foldersBox).values,
-    );
 
 final class HiveWrites {
   HiveWrites._(this._directory, this._before) {
@@ -82,40 +70,8 @@ Future<Map<String, String>> hiveFiles(Directory directory) async => {
                   '${sha256.convert(await file.readAsBytes())}',
     };
 
-final _foreignNames = Expando<List<ForeignName>>('foreign names');
-
 Future<LibraryStore> openStoreOn(StorageEngine engine) async =>
     switch (await LibraryStore.open(engine, canRead: appCanRead)) {
-      StoreOpened(:final store, :final foreignNames) => () {
-          _foreignNames[store] = foreignNames;
-          return store;
-        }(),
+      StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => throw StateError('$problem'),
     };
-
-Future<ShadowCopy> copyFromHive(
-  LibraryStore store, {
-  Future<void> Function() breathe = _still,
-}) async {
-  final writes = LibraryBoxWrites();
-  try {
-    return await copyHiveIntoStore(
-      HiveReads(),
-      GatedStore.open(store),
-      images: StrategyImages(),
-      writes: writes,
-      breathe: breathe,
-    );
-  } finally {
-    await writes.stop();
-  }
-}
-
-Future<StoreCheck> checkFromHive(LibraryStore store) => checkStoreAgainstHive(
-      hiveLibraryNow(),
-      store,
-      foreignNames: _foreignNames[store] ?? const [],
-      breathe: _still,
-    );
-
-Future<void> _still() async {}
