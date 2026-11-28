@@ -916,11 +916,18 @@ final class SentAgainAs extends RemovalCause {
   String toString() => 'SentAgainAs($opId)';
 }
 
-const _sentAgain = '~again';
+String sentAgainId(String opId) => '$opId~again';
 
-String sentAgainId(String opId) => '$opId$_sentAgain';
+bool mayIssueAgain(CloudQueue queue, PendingOp entry) =>
+    entry.issuedAgainAfter == null &&
+    !_idTaken(queue.entries, queue.strategy, sentAgainId(entry.id));
 
-bool isSentAgain(String opId) => opId.endsWith(_sentAgain);
+bool _idTaken(List<QueueEntry> entries, StrategyFacts strategy, String opId) =>
+    entries.any((entry) => entry.id == opId) ||
+    switch (strategy.setAside) {
+      SetAside(:final entries) => entries.any((entry) => entry.id == opId),
+      NothingSetAside() => false,
+    };
 
 bool refusedAsPageDeleted(PendingOp entry) =>
     _refusedInTheTrash(entry.op) &&
@@ -1416,8 +1423,15 @@ final class _Edit {
     );
   }
 
-  Stepped done() =>
-      Stepped(build(), effects, decisions: decisions, tookResult: tookResult);
+  Stepped done() {
+    _issueAgainWhereThePageIsLive(this);
+    return Stepped(
+      build(),
+      effects,
+      decisions: decisions,
+      tookResult: tookResult,
+    );
+  }
 }
 
 CloudQueue recordExpiries(CloudQueue queue, DateTime now) {
@@ -2018,7 +2032,6 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     ]);
     edit.change.lives.add(page.publicId);
   }
-  if (base is HeaderRead) _sendAgainWhereThePageIsLive(edit);
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -3016,26 +3029,19 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
 void _letGoWithItsPage(_Edit edit, PendingOp delete, String page) {
   final views = entryViews(edit.original, edit.now);
   for (final ahead in [...edit.entries]) {
-    if (ahead is! PendingOp ||
-        ahead.place > delete.place ||
-        ahead.id == delete.id ||
-        views[ahead.id]?.state is Sending ||
-        !_refusedInTheTrash(ahead.op) ||
-        !_contentPagesOf(edit.original, ahead).contains(page)) {
-      continue;
-    }
-    final entity = entityOf(ahead.op);
-    for (final gone in [...edit.entries]) {
-      if (gone is PendingOp &&
-          gone.id != delete.id &&
-          (gone.id == ahead.id ||
-              (gone.place > ahead.place && entityOf(gone.op) == entity)) &&
-          edit.indexOf(gone.id) != -1) {
-        edit.remove(gone.id, LetGoWithItsPage(delete.id));
-      }
+    if (ahead is PendingOp &&
+        ahead.place < delete.place &&
+        !_inFlight(views[ahead.id]) &&
+        pagesJudgedOn(edit.shown, ahead).contains(page)) {
+      edit.remove(ahead.id, LetGoWithItsPage(delete.id));
     }
   }
 }
+
+bool _inFlight(EntryView? view) => switch (view?.state) {
+  Sending() || Unanswered() => true,
+  _ => false,
+};
 
 bool _alreadyAsWritten(StrategyOp op, ServerSnapshot snapshot) {
   final value = snapshot.value;
@@ -3270,15 +3276,18 @@ void _issueAgain(
   edit.effects.add(OpRemoved(entry.id, cause));
 }
 
-void _sendAgainWhereThePageIsLive(_Edit edit) {
-  if (isDebt(edit.shown.list)) return;
+void _issueAgainWhereThePageIsLive(_Edit edit) {
+  if (isDebt(edit.shown.list) || edit.strategy.presence == Presence.gone) {
+    return;
+  }
   for (final entry in [...edit.entries]) {
     if (entry is! PendingOp ||
         !refusedAsPageDeleted(entry) ||
-        isSentAgain(entry.id)) {
+        entry.issuedAgainAfter != null ||
+        _opIdTaken(edit, sentAgainId(entry.id))) {
       continue;
     }
-    final pages = _contentPagesOf(edit.original, entry);
+    final pages = pagesJudgedOn(edit.shown, entry);
     if (!pages.every(edit.shown.pages.containsKey)) continue;
     final again = renamed(entry.op, sentAgainId(entry.id));
     _issueAgain(
@@ -3291,6 +3300,7 @@ void _sendAgainWhereThePageIsLive(_Edit edit) {
           _ => OpWork(again),
         },
         refusal: const NotRefused(),
+        issuedAgainAfter: entry.id,
       ),
       SentAgainAs(again.opId),
     );
@@ -3324,9 +3334,11 @@ Step _userRemoves(_Edit edit, String opId, UserRemoval action, DateTime now) {
   edit.remove(opId, RemovedByUser(action, landingOf(queue, entry)));
   if (entry is PendingOp) {
     final entity = entityOf(entry.op);
+    final views = entryViews(queue, now);
     for (final later in [...edit.entries]) {
       if (later is PendingOp &&
           later.place > entry.place &&
+          !_inFlight(views[later.id]) &&
           entityOf(later.op) == entity) {
         edit.remove(later.id, RemovedByUser(action, landingOf(queue, later)));
       }

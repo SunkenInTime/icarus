@@ -88,6 +88,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       },
     'strategyLife': ?entry.strategyLife,
     if (entry.madeAs != MadeAs.unmarked) 'madeAs': entry.madeAs.name,
+    'issuedAgainAfter': ?entry.issuedAgainAfter,
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -271,6 +272,7 @@ Decoded<QueueEntry> decodeEntry(
       final strategyLife = fields.has('strategyLife')
           ? fields.whole('strategyLife')
           : null;
+      final issuedAgainAfter = fields.optionalString('issuedAgainAfter');
       final madeAs = fields.has('madeAs')
           ? _named(fields, 'madeAs', MadeAs.values)
           : MadeAs.unmarked;
@@ -312,6 +314,7 @@ Decoded<QueueEntry> decodeEntry(
         window: windowPassed ? const WindowPassed() : const WindowOpen(),
         strategyLife: strategyLife,
         madeAs: madeAs!,
+        issuedAgainAfter: issuedAgainAfter,
       );
     default:
       fields.reject('an entry kind this build does not read');

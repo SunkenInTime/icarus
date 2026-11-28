@@ -672,7 +672,27 @@ final class Model {
         FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
         LetGoWithItsPage(:final deleteOpId) =>
-          event is OpAnswered && event.answer.opId == deleteOpId,
+          event is OpAnswered &&
+              event.answer.opId == deleteOpId &&
+              switch ((before.entry(deleteOpId), entry)) {
+                (
+                  PendingOp(
+                    op: PageDeleteOp(:final pagePublicId),
+                    place: final at,
+                  ),
+                  final PendingOp gone,
+                ) =>
+                  gone.place < at &&
+                      pagesJudgedOn(
+                        before.shown,
+                        gone,
+                      ).contains(pagePublicId) &&
+                      switch (entryViews(before, clock)[gone.id]?.state) {
+                        Sending() || Unanswered() => false,
+                        _ => true,
+                      },
+                _ => false,
+              },
         SentAgainAs() =>
           event is BaseArrived &&
               event.base is HeaderRead &&

@@ -1,5 +1,6 @@
 import 'package:icarus_library/icarus_library.dart';
-import 'package:icarus_library/src/cloud/codec.dart' show entryToJson;
+import 'package:icarus_library/src/cloud/codec.dart'
+    show decodeEntry, entryToJson;
 import 'package:icarus_library/src/cloud/op_facts.dart' show renamed;
 import 'package:test/test.dart';
 
@@ -53,6 +54,7 @@ Future<SendBatch> answerAll(
 
 void main() {
   sentAgainTests();
+  roundTwoTests();
   group(
     'an op is held while the server\'s rows hold its page in the trash',
     () {
@@ -571,6 +573,378 @@ void sentAgainTests() {
             ),
           ),
         ),
+      );
+    });
+  });
+}
+
+Future<void> listedAt(
+  LibraryStore store,
+  StrategyRowSet server,
+  ResultPoint point,
+) async {
+  final session = (await syncOf(store)).queue.session.number;
+  await recordAll(store, [
+    BaseArrived(headerReadOf(server), session: session, point: point),
+  ]);
+}
+
+Future<List<QueueEffect>> answerOnly(
+  LibraryStore store,
+  List<String> opIds,
+  Server server,
+) async {
+  final sent = effectsOf(
+    await recordAll(store, [
+      BatchClaimed(clientId: clientId, opIds: opIds, at: fixedClock()),
+    ]),
+  ).whereType<SendBatch>().single;
+  return effectsOf(
+    await recordAll(store, [
+      for (final op in sent.ops)
+        OpAnswered(sent.attempt, server.apply(clientId, op), point: tick()),
+    ]),
+  );
+}
+
+PendingOp pendingIn(CloudStrategy cloud, String id) =>
+    cloud.queue.entry(id)! as PendingOp;
+
+void roundTwoTests() {
+  group('round 2', () {
+    test(
+      'A, B: a move onto the deleted page and back, my delete of it, then '
+      'an edit on A: the edit waits behind the held moves, the moves go '
+      'with my delete, and the edit is judged against the server row',
+      () async {
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        await addCloud(store, initialRows());
+        await commit(
+          store,
+          movePatch('to-b', elementId: 'e1', pageId: 'page-b'),
+        );
+        await commit(
+          store,
+          movePatch('to-a', elementId: 'e1', pageId: 'page-a', expected: 2),
+        );
+        await commit(store, pageDelete('drop', 'page-b'));
+        await commit(
+          store,
+          movePatch('edit', elementId: 'e1', x: 70, expected: 3),
+        );
+        await listed(store, theyDeleted);
+        final views = (await syncOf(store)).views;
+        expect(views['to-b']!.holds, contains(const PageInTrash('page-b')));
+        expect(views['to-a']!.holds, contains(const PageInTrash('page-b')));
+        expect(
+          views['edit']!.holds,
+          contains(const BehindEntry('to-a', Dependency.sameRow)),
+        );
+        expect(await sendable(store), ['drop']);
+        final effects = await answerOnly(store, [
+          'drop',
+        ], Server()..rows = theyDeleted);
+        expect(
+          effects,
+          containsAll([
+            const OpRemoved('to-b', LetGoWithItsPage('drop')),
+            const OpRemoved('to-a', LetGoWithItsPage('drop')),
+          ]),
+        );
+        expect((await syncOf(store)).queue.entries.map((entry) => entry.id), [
+          'edit',
+        ]);
+        await listed(store, theyDeleted);
+        if ((await viewOf(store, 'edit')).sendable) {
+          await answerFrom(store, Server()..rows = theyDeleted);
+        }
+        expect(
+          (await viewOf(store, 'edit')).state,
+          isA<NeedsUser>(),
+          reason: '${await viewOf(store, 'edit')}',
+        );
+      },
+    );
+
+    test(
+      'B: for lineup groups, my landed delete lets go the group edit on '
+      'the deleted page and leaves the edit of a group on another page',
+      () async {
+        final base = strategyRows(
+          elements: initialRows().elements.toList(),
+          lineupGroups: [
+            bornIn(lineupGroup('g1', pageId: 'page-b'), fixtureLife)
+                as LineupGroupRow,
+            bornIn(lineupGroup('g2'), fixtureLife) as LineupGroupRow,
+          ],
+        );
+        final deleted = withOp(base, pageDelete('their-drop', 'page-b'));
+        LineupGroupPatchOp edited(String opId, String group) =>
+            LineupGroupPatchOp(
+              opId: opId,
+              lineupPublicId: group,
+              expectedLineupRevision: 1,
+              payload: lineupPayload(group, notes: 'edited'),
+            );
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        await addCloud(store, base);
+        await commit(store, edited('edit-b', 'g1'));
+        await commit(store, pageDelete('drop', 'page-b'));
+        await commit(store, edited('edit-a', 'g2'));
+        await listed(store, deleted);
+        expect(await sendable(store), ['drop', 'edit-a']);
+        final effects = await answerOnly(store, [
+          'drop',
+        ], Server()..rows = deleted);
+        expect(
+          effects,
+          contains(const OpRemoved('edit-b', LetGoWithItsPage('drop'))),
+        );
+        expect((await syncOf(store)).queue.entries.map((entry) => entry.id), [
+          'edit-a',
+        ]);
+      },
+    );
+
+    test('B, D: an edit in place on the deleted page whose item a teammate '
+        'moved off it first stays when my delete of the page lands, and '
+        'lands where the item is', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      await commit(
+        store,
+        movePatch(
+          'edit',
+          elementId: 'e3',
+          merge: FieldMerge(fields: ['position']),
+        ),
+      );
+      await commit(store, pageDelete('drop', 'page-b'));
+      final moved = withOp(
+        initialRows(),
+        ElementPatchOp(
+          opId: 'their-move',
+          elementPublicId: 'e3',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-a',
+          payload: (initialRows().element('e3')! as LiveElement).payload,
+          sortIndex: 5,
+        ),
+      );
+      final server = Server()
+        ..rows = withOp(
+          moved,
+          pageDelete('their-drop', 'page-b', expected: moved.strategy.revision),
+        );
+      await listed(store, server.rows);
+      expect((await viewOf(store, 'edit')).holds, isEmpty);
+      final effects = await answerOnly(store, ['drop'], server);
+      expect(effects.whereType<OpRemoved>().map((effect) => effect.opId), [
+        'drop',
+      ]);
+      await answerOnly(store, ['edit'], server);
+      expect(server.landed('edit'), isTrue);
+      expect(server.rows.element('e3')!.pagePublicId, 'page-a');
+      await listed(store, withoutPage(server.rows, 'page-b'));
+      expect((await syncOf(store)).queue.entries, isEmpty);
+    });
+
+    test('D: a refused edit whose item was confirmed on a page later purged '
+        'is not left waiting with no read owed', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      await commit(store, movePatch('edit', elementId: 'e1', x: 50));
+      final onB = withOp(
+        initialRows(),
+        ElementPatchOp(
+          opId: 'their-move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: (initialRows().element('e1')! as LiveElement).payload,
+          sortIndex: 5,
+        ),
+      );
+      final server = Server()
+        ..rows = withOp(
+          onB,
+          pageDelete('their-drop', 'page-b', expected: onB.strategy.revision),
+        );
+      await answerFrom(store, server);
+      await listed(store, server.rows);
+      await recordAll(store, [
+        await arrivalIn(store, pageReadOf(server.rows, 'page-b')),
+      ]);
+      final purged = withoutPage(server.rows, 'page-b');
+      await listed(store, purged);
+      final view = (await syncOf(store)).views.values.single;
+      expect(view.sendable || view.state is NeedsUser, isTrue, reason: '$view');
+    });
+
+    test('C: a list at the same result order as the one already taken still '
+        'issues the refused change again', () async {
+      final store = await editedBeforeTheyDeleted([
+        movePatch('mine', elementId: 'e3', pageId: 'page-b'),
+      ]);
+      final server = Server()..rows = theyDeleted;
+      final sent = await claimAll(store);
+      final refused = server.apply(clientId, sent.ops.single);
+      final answeredAt = tick();
+      final point = tick();
+      await listedAt(store, theyRestored, point);
+      await recordAll(store, [
+        OpAnswered(sent.attempt, refused, point: answeredAt),
+      ]);
+      expect(
+        (await viewOf(store, 'mine')).holds,
+        contains(const RefusedAsPageDeleted()),
+      );
+      final effects = effectsOf(
+        await recordAll(store, [
+          BaseArrived(
+            headerReadOf(theyRestored),
+            session: (await syncOf(store)).queue.session.number,
+            point: point,
+          ),
+        ]),
+      );
+      expect(
+        effects,
+        contains(OpRemoved('mine', SentAgainAs(sentAgainId('mine')))),
+      );
+    });
+
+    group('E: issued again is a stored fact', () {
+      Future<LibraryStore> issuedAgain(MemoryStorage storage) async {
+        final store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await commit(
+          store,
+          movePatch('mine', elementId: 'e3', pageId: 'page-b'),
+        );
+        await answerFrom(store, Server()..rows = theyDeleted);
+        await listed(store, theyRestored);
+        return store;
+      }
+
+      test('it survives a fold and a restart', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        final fields = FieldMerge(fields: ['position']);
+        await commit(store, movePatch('mine', elementId: 'e3', merge: fields));
+        await answerFrom(store, Server()..rows = theyDeleted);
+        await listed(store, theyRestored);
+        expect(
+          pendingIn(await syncOf(store), sentAgainId('mine')).issuedAgainAfter,
+          'mine',
+        );
+        await commit(
+          store,
+          movePatch('more', elementId: 'e3', x: 90, expected: 2, merge: fields),
+        );
+        final entries = (await syncOf(store)).queue.entries;
+        expect(entries.map((entry) => entry.id), ['more']);
+        expect((entries.single as PendingOp).issuedAgainAfter, 'mine');
+        await store.close();
+        store = await openCloudStore(MemoryEngine(storage));
+        expect(pendingIn(await syncOf(store), 'more').issuedAgainAfter, 'mine');
+      });
+
+      test('keep mine clears it, so the change can be issued again once more '
+          'if it is refused the same way', () async {
+        final store = await issuedAgain(MemoryStorage());
+        final again = sentAgainId('mine');
+        final server = Server()..rows = theyDeleted;
+        await answerFrom(store, server);
+        await listed(store, theyRestored);
+        expect((await viewOf(store, again)).state, isA<NeedsUser>());
+        final replacement = movePatch(
+          'kept',
+          elementId: 'e3',
+          pageId: 'page-b',
+        );
+        await recordAll(store, [
+          UserKeptMine(again, replacement, authored: const AuthoredNoRow()),
+        ]);
+        expect(pendingIn(await syncOf(store), 'kept').issuedAgainAfter, isNull);
+        await answerFrom(store, Server()..rows = theyDeleted);
+        await listed(store, theyRestored);
+        expect(
+          pendingIn(await syncOf(store), sentAgainId('kept')).issuedAgainAfter,
+          'kept',
+        );
+      });
+
+      test('an op never issued again does not read as issued again, whatever '
+          'its id, and a taken id sends the change to the user', () async {
+        final store = await editedBeforeTheyDeleted([
+          movePatch('x~again', elementId: 'e3', pageId: 'page-b'),
+        ]);
+        await answerFrom(store, Server()..rows = theyDeleted);
+        await listed(store, theyRestored);
+        expect(
+          pendingIn(
+            await syncOf(store),
+            sentAgainId('x~again'),
+          ).issuedAgainAfter,
+          'x~again',
+        );
+        final taken = await editedBeforeTheyDeleted([
+          movePatch('y', elementId: 'e3', pageId: 'page-b'),
+          movePatch('y~again', elementId: 'e1', x: 40),
+        ]);
+        final server = Server()..rows = theyDeleted;
+        await answerOnly(taken, ['y'], server);
+        await listed(taken, theyRestored);
+        expect((await viewOf(taken, 'y')).state, isA<NeedsUser>());
+      });
+
+      test('a record written without the fact reads as not issued again', () {
+        const recorded = {
+          'version': 1,
+          'kind': 'op',
+          'op': {
+            'opId': 'drop',
+            'type': 'page.delete',
+            'pagePublicId': 'page-b',
+            'expectedStrategyRevision': 1,
+          },
+          'scope': {'page': 'page-b'},
+          'authored': {'revision': 1, 'life': fixtureLife, 'digest': 'd'},
+          'authoredIn': 2,
+          'authoredAt': 1795737600000,
+          'retriedAfter': 0,
+          'work': 'op',
+          'refusal': null,
+        };
+        expect(
+          decodeEntry(3, recorded, sendable: true),
+          isA<Read<QueueEntry>>().having(
+            (read) => (read.value as PendingOp).issuedAgainAfter,
+            'issuedAgainAfter',
+            isNull,
+          ),
+        );
+      });
+    });
+
+    test('G: a change issued again keeps its age, so near the end of the '
+        'window it comes back as written long ago', () async {
+      var clock = fixedClock();
+      final store = await openCloudStore(
+        MemoryEngine(MemoryStorage()),
+        clock: () => clock,
+      );
+      await addCloud(store, initialRows());
+      await commit(store, movePatch('mine', elementId: 'e3', pageId: 'page-b'));
+      await answerFrom(store, Server()..rows = theyDeleted);
+      clock = clock.add(resendWindow);
+      await listed(store, theyRestored);
+      await recordAll(store, const []);
+      expect(
+        (await viewOf(store, sentAgainId('mine'))).state,
+        const NeedsUser(WrittenLongAgo()),
       );
     });
   });

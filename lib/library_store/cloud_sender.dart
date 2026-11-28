@@ -462,6 +462,8 @@ final class CloudSender implements LiveResults {
     wake();
   }
 
+  final _heldLookedAt = <String>{};
+
   StallExit? waitingOn(String strategyId) => switch (runHold) {
         _ when held != null => StallExit.heldByHand,
         _ when _inputs.account == null => StallExit.signedOut,
@@ -926,6 +928,14 @@ final class CloudSender implements LiveResults {
             why != StallExit.viewerOnTakeUp &&
             why != StallExit.goneOnTakeUp,
       );
+      for (final strategy in stored) {
+        if (strategy.ownerAccount == account &&
+            (strategy.tally?.waiting.containsKey(Underway.pageInTrash) ??
+                false) &&
+            _heldLookedAt.add(strategy.id)) {
+          _governor.written(strategy.id, const ReadOfList(), late: true);
+        }
+      }
       final candidates = <_Candidate>[
         for (final id in _wanted.keys) _Adopt(id),
         for (final strategy in stored)
@@ -1734,6 +1744,7 @@ final class CloudSender implements LiveResults {
             }),
           _Why.access || _Why.live => memory,
         });
+    if (read is ReadOfList) _heldLookedAt.add(id);
     _store.report(ReadRecorded(id, '$read', why.words, at: started));
   }
 

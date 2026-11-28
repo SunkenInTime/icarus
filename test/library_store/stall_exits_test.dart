@@ -955,8 +955,65 @@ void main() {
       (world) {
         watch(world);
         world.settle(const Duration(hours: 1));
-        expect(calls, ['send move-1', 'list']);
+        expect(calls, ['send move-1', 'list', 'list']);
         expect(world.sender.waitingOn(strategyId), StallExit.pageInTrash);
+      },
+      storage: storage,
+      server: server,
+      addStrategy: false,
+    );
+  });
+
+  test(
+      'a page restored while the app was closed is noticed by the one page '
+      'list the next run reads, and the edit is sent again', () {
+    final storage = MemoryStorage();
+    final server = FakeServer();
+    final calls = <String>[];
+    void watch(World world) {
+      world.server.onRead = (call) => calls.add('$call');
+      world.server.onCall = (call) => calls.add('send ${call.opIds.join(',')}');
+    }
+
+    inWorld(
+      (world) {
+        final stall = stalls[StallExit.pageInTrash]!;
+        stall.prepare!(world);
+        watch(world);
+        stall.start(world);
+        world.settle(const Duration(minutes: 10));
+        expect(world.sender.waitingOn(strategyId), StallExit.pageInTrash);
+        final rows = world.server.rows[strategyId]!;
+        final trashed = rows.page('p1')! as TrashedPage;
+        world.server.rows[strategyId] = rows.withRows([
+          LivePage(
+            publicId: trashed.publicId,
+            strategyPublicId: trashed.strategyPublicId,
+            name: trashed.name,
+            sortIndex: trashed.sortIndex,
+            isAttack: trashed.isAttack,
+            isAutoNamed: trashed.isAutoNamed,
+            revision: trashed.revision,
+            unknownFields: trashed.unknownFields,
+          ),
+          rows.strategy.rewritten(revision: rows.strategy.revision + 1),
+        ]);
+      },
+      storage: storage,
+      server: server,
+    );
+    inWorld(
+      (world) {
+        watch(world);
+        world.settle(const Duration(minutes: 10));
+        expect(calls, [
+          'send move-1',
+          'list',
+          'list',
+          'send move-1~again',
+          'page p1',
+        ]);
+        expect(world.queueLength(), 0);
       },
       storage: storage,
       server: server,

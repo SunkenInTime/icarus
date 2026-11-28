@@ -505,7 +505,7 @@ Starts as: waiting, its page page-a is in the trash.
 | Event | Result |
 | --- | --- |
 | user edits another item | z: waiting, its page page-a is in the trash |
-| user edits the same item | w: waiting, its page page-a is in the trash |
+| user edits the same item | w: waiting, behind x (sameRow), its page page-a is in the trash |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |

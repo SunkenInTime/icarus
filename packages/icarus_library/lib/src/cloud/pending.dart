@@ -63,6 +63,7 @@ final class PendingOp extends QueueEntry {
     this.basis,
     this.strategyLife,
     this.madeAs = MadeAs.unmarked,
+    this.issuedAgainAfter,
   });
 
   final Work work;
@@ -77,6 +78,7 @@ final class PendingOp extends QueueEntry {
   final ServerTimeBasis? basis;
   final int? strategyLife;
   final MadeAs madeAs;
+  final String? issuedAgainAfter;
 
   StrategyOp get op => work.op;
 
@@ -92,6 +94,7 @@ final class PendingOp extends QueueEntry {
     int? retriedAfter,
     ResendWindow? window,
     bool dropBasis = false,
+    String? issuedAgainAfter,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
@@ -106,6 +109,7 @@ final class PendingOp extends QueueEntry {
     basis: dropBasis ? null : basis,
     strategyLife: strategyLife,
     madeAs: madeAs,
+    issuedAgainAfter: issuedAgainAfter ?? this.issuedAgainAfter,
   );
 
   @override
@@ -123,7 +127,8 @@ final class PendingOp extends QueueEntry {
       other.behindOwn == behindOwn &&
       other.basis == basis &&
       other.strategyLife == strategyLife &&
-      other.madeAs == madeAs;
+      other.madeAs == madeAs &&
+      other.issuedAgainAfter == issuedAgainAfter;
 
   @override
   int get hashCode => Object.hash(
@@ -136,6 +141,7 @@ final class PendingOp extends QueueEntry {
     retriedAfter,
     window,
     behindOwn,
+    issuedAgainAfter,
   );
 
   @override

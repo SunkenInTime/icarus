@@ -26,6 +26,11 @@ final class EventFact extends Fact {
 final class ReadFact extends Fact {
   ReadFact(this.base, super.label, {super.phase}) : point = tick();
 
+  ReadFact.again(ReadFact first)
+    : base = first.base,
+      point = first.point,
+      super('${first.label} again at its order', phase: first.phase);
+
   final ArrivedBase base;
   late final int session;
   final ResultPoint point;
@@ -254,6 +259,12 @@ final class Scenario {
       ),
     ]);
     facts.add(pageRead(page));
+    final restored = headerRead();
+    facts.add(restored);
+    if (random.nextBool()) {
+      facts.add(ReadFact.again(restored));
+      countHeld('lists at an order already taken');
+    }
   }
 
   void prefix(int steps) {
@@ -734,6 +745,7 @@ void main() {
       'gone',
       'refused as its page deleted',
       'sent again',
+      'lists at an order already taken',
     ]) {
       expect(heldCounts[reached] ?? 0, greaterThan(0), reason: reached);
     }

@@ -44,19 +44,27 @@ bool _refusedInTheTrash(StrategyOp op) => switch (op) {
   _ => true,
 };
 
-Set<String> _contentPagesOf(CloudQueue queue, PendingOp entry) =>
-    switch (entry.op) {
-      PageAddOp(:final pagePublicId) => {pagePublicId},
-      final op => {..._pagesOf(entry), ?queue.shown.rows[targetOf(op)]?.page},
-    };
+Set<String> pagesJudgedOn(Shown shown, PendingOp entry) => switch (entry.op) {
+  StrategyPatchOp() || PageDeleteOp() => const {},
+  PageAddOp(:final pagePublicId) ||
+  PagePatchOp(:final pagePublicId) ||
+  PageReorderOp(:final pagePublicId) ||
+  PageSettingsPatchOp(:final pagePublicId) ||
+  ElementAddOp(:final pagePublicId) ||
+  LineupGroupAddOp(:final pagePublicId) => {pagePublicId},
+  final op => switch (entry.scope) {
+    Moving(:final from, :final to) => {from, to},
+    OnPage(:final pagePublicId) => {
+      shown.rows[targetOf(op)]?.page ?? pagePublicId,
+    },
+    StrategyWide() => {?shown.rows[targetOf(op)]?.page},
+  },
+};
 
-Set<String> trashedPagesOf(CloudQueue queue, PendingOp entry) {
-  if (!_refusedInTheTrash(entry.op)) return const {};
-  return {
-    for (final page in _contentPagesOf(queue, entry))
-      if (queue.shown.trashed.containsKey(page)) page,
-  };
-}
+Set<String> trashedPagesOf(CloudQueue queue, PendingOp entry) => {
+  for (final page in pagesJudgedOn(queue.shown, entry))
+    if (queue.shown.trashed.containsKey(page)) page,
+};
 
 String? _workPage(StrategyOp op) => switch (op) {
   PageDeleteOp(:final pagePublicId) => pagePublicId,
@@ -256,16 +264,6 @@ final class _Index {
       }
     }
     return due;
-  }
-
-  String? lastBeforeWhere(Object key, int place, bool Function(String) keep) {
-    final slots = under[key];
-    if (slots == null) return null;
-    for (var at = _slotAt(slots, place) - 1; at >= 0; at--) {
-      derivationWork.visits++;
-      if (keep(slots[at].$2)) return slots[at].$2;
-    }
-    return null;
   }
 
   String? lastBefore(Map<Object, List<_Slot>> lists, Object key, int place) {
@@ -954,19 +952,21 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     if (id != null) holds.add(BehindEntry(id, why));
   }
 
-  bool sendsWhenItCan(String id) => switch (index.byId[id]) {
-    final PendingOp ahead => trashedPagesOf(queue, ahead).isEmpty,
-    _ => true,
-  };
+  String? lastBefore(Object key) => _lastSendingBefore(queue, key, place);
 
-  String? lastBefore(Object key) =>
-      index.lastBeforeWhere(key, place, sendsWhenItCan);
-
-  behind(lastBefore(target), switch (target) {
-    StrategyTarget() => Dependency.strategyChange,
-    PageTarget() => Dependency.pageChange,
-    SettingsTarget() || ElementTarget() || LineupTarget() => Dependency.sameRow,
-  });
+  behind(
+    switch (target) {
+      StrategyTarget() => lastBefore(target),
+      _ => index.lastBefore(index.under, target, place),
+    },
+    switch (target) {
+      StrategyTarget() => Dependency.strategyChange,
+      PageTarget() => Dependency.pageChange,
+      SettingsTarget() ||
+      ElementTarget() ||
+      LineupTarget() => Dependency.sameRow,
+    },
+  );
   if (target is PageTarget) {
     behind(lastBefore(const _Renumbering()), Dependency.pageChange);
   }
@@ -1005,13 +1005,13 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     }
   }
   if (refusedAsPageDeleted(entry)) {
-    final pages = _contentPagesOf(queue, entry);
+    final pages = pagesJudgedOn(queue.shown, entry);
     switch (_whereTheListPuts(queue, pages)) {
       case _Listed.inTrash:
         break;
       case _Listed.gone:
         return (EntryView(const NeedsUser(RowPageGone()), const []), null);
-      case _Listed.live when isSentAgain(entry.id):
+      case _Listed.live when !mayIssueAgain(queue, entry):
         return (
           EntryView(NeedsUser(RefusedByServer(_refusalOf(entry))), const []),
           null,
@@ -1038,8 +1038,8 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
       state is Waiting &&
       _refusedInTheTrash(op) &&
       op is! PageAddOp &&
-      _contentPagesOf(
-        queue,
+      pagesJudgedOn(
+        queue.shown,
         entry,
       ).any((page) => _pageGone(queue.shown, page))) {
     return (EntryView(const NeedsUser(RowPageGone()), const []), null);
@@ -1102,6 +1102,42 @@ ServerRefusal _refusalOf(PendingOp entry) => switch (entry.refusal) {
   RefusedWith(:final refusal) => refusal,
   _ => throw StateError('${entry.id} is not refused'),
 };
+
+final _sendingBefore = Expando<Map<(Object, int), String>>();
+
+const _noneSends = '';
+
+String? _lastSendingBefore(CloudQueue queue, Object key, int place) {
+  final slots = queue._index.under[key];
+  if (slots == null) return null;
+  final memo = _sendingBefore[queue] ??= {};
+  final held = <int>[];
+  String found = _noneSends;
+  for (var at = _slotAt(slots, place) - 1; at >= 0; at--) {
+    derivationWork.visits++;
+    final (slotPlace, id) = slots[at];
+    if (memo[(key, slotPlace)] case final known?) {
+      found = switch (queue._index.byId[id]) {
+        final PendingOp entry when trashedPagesOf(queue, entry).isNotEmpty =>
+          known,
+        _ => id,
+      };
+      break;
+    }
+    if (switch (queue._index.byId[id]) {
+      final PendingOp entry => trashedPagesOf(queue, entry).isEmpty,
+      _ => true,
+    }) {
+      found = id;
+      break;
+    }
+    held.add(slotPlace);
+  }
+  for (final slotPlace in held) {
+    memo[(key, slotPlace)] = found;
+  }
+  return found == _noneSends ? null : found;
+}
 
 Target _rowTarget(StrategyOp op) => switch (checkTargetOf(op)) {
   StrategyTarget() => targetOf(op),
