@@ -382,8 +382,8 @@ void main() {
   });
 
   test(
-      'a strategy whose stored summary has gone stale is listed as its own '
-      'rows say', () async {
+      'a strategy whose stored summary has gone stale, with a map name no '
+      'build can read, is listed as its own rows say', () async {
     await _library();
     final storage = MemoryStorage();
     await (await moved(MemoryEngine(storage))).close();
@@ -400,6 +400,7 @@ void main() {
         ...summary,
         'folderPublicId': 'folder-2',
         'name': 'Stale',
+        'mapData': 'no-such-map',
       });
     }
     final store = await _open(MemoryEngine(MemoryStorage(contents)));
@@ -415,6 +416,14 @@ void main() {
     final listed = LocalLibraryView().strategy('b')!;
     expect(listed.name, 'Strategy b');
     expect(listed.folderId, 'folder-1');
+    expect(listed.mapData, _strategy('b').mapData);
+    expect(
+      [
+        for (final summary in LocalLibraryView().strategies.value)
+          summary.mapData
+      ],
+      hasLength(3),
+    );
     await store.close();
   });
 
@@ -454,12 +463,16 @@ void main() {
 
     LocalLibrary.source = const LibraryInHive();
     final hive = await aroundRenameAndMove();
-    await strategies.put('y', _strategy('y').copyWith(
-      lastEdited: DateTime.utc(2026, 3, 2),
-    ));
-    await strategies.put('z', _strategy('z').copyWith(
-      lastEdited: DateTime.utc(2026, 3, 3),
-    ));
+    await strategies.put(
+        'y',
+        _strategy('y').copyWith(
+          lastEdited: DateTime.utc(2026, 3, 2),
+        ));
+    await strategies.put(
+        'z',
+        _strategy('z').copyWith(
+          lastEdited: DateTime.utc(2026, 3, 3),
+        ));
     final storage = MemoryStorage();
     final store = await moved(MemoryEngine(storage));
     LocalLibrary.source = LibraryInStore(await _loaded(store));
@@ -610,14 +623,18 @@ void main() {
     final numbers = switch (await readStoredRows(store, 'a')) {
       StoredRowsRead(:final rows) => {
           for (final element in rows.elements)
-            if (element case ReadableElementRow(:final publicId, :final sortIndex)
+            if (element
+                case ReadableElementRow(:final publicId, :final sortIndex)
                 when drawingIds.contains(publicId))
               publicId: sortIndex,
         },
       final other => fail('the strategy reads as $other'),
     };
     expect(
-      [for (final drawing in raised.pages.first.drawingData) numbers[drawing.id]],
+      [
+        for (final drawing in raised.pages.first.drawingData)
+          numbers[drawing.id]
+      ],
       [for (var i = 0; i < drawingIds.length; i++) i],
     );
     await store.close();
