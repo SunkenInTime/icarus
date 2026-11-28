@@ -44,22 +44,16 @@ bool _refusedInTheTrash(StrategyOp op) => switch (op) {
   _ => true,
 };
 
-Set<String> pagesJudgedOn(Shown shown, PendingOp entry) => switch (entry.op) {
-  StrategyPatchOp() || PageDeleteOp() => const {},
-  PageAddOp(:final pagePublicId) ||
-  PagePatchOp(:final pagePublicId) ||
-  PageReorderOp(:final pagePublicId) ||
-  PageSettingsPatchOp(:final pagePublicId) ||
-  ElementAddOp(:final pagePublicId) ||
-  LineupGroupAddOp(:final pagePublicId) => {pagePublicId},
-  final op => switch (entry.scope) {
-    Moving(:final from, :final to) => {from, to},
-    OnPage(:final pagePublicId) => {
-      shown.rows[targetOf(op)]?.page ?? pagePublicId,
-    },
-    StrategyWide() => {?shown.rows[targetOf(op)]?.page},
-  },
-};
+Set<String> pagesJudgedOn(Shown shown, PendingOp entry) => pagesRequiredLive(
+  entry.op,
+  rowPage:
+      shown.rows[targetOf(entry.op)]?.page ??
+      switch (entry.scope) {
+        Moving(:final from) => from,
+        OnPage(:final pagePublicId) => pagePublicId,
+        StrategyWide() => null,
+      },
+);
 
 Set<String> trashedPagesOf(CloudQueue queue, PendingOp entry) => {
   for (final page in pagesJudgedOn(queue.shown, entry))

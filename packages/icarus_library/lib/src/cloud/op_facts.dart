@@ -133,6 +133,22 @@ Iterable<String> pagesNeeded(StrategyOp op) => switch (op) {
   LineupGroupPatchOp(:final pagePublicId) => [?pagePublicId],
 };
 
+Set<String> pagesRequiredLive(StrategyOp op, {String? rowPage}) => switch (op) {
+  StrategyPatchOp() || PageDeleteOp() => const {},
+  PageAddOp(:final pagePublicId) ||
+  PagePatchOp(:final pagePublicId) ||
+  PageReorderOp(:final pagePublicId) ||
+  PageSettingsPatchOp(:final pagePublicId) => {pagePublicId},
+  ElementAddOp(:final pagePublicId) ||
+  LineupGroupAddOp(:final pagePublicId) => {pagePublicId, ?rowPage},
+  ElementPatchOp(:final pagePublicId) => {?rowPage, ?pagePublicId},
+  LineupGroupPatchOp() ||
+  ElementDeleteOp() ||
+  ElementReorderOp() ||
+  LineupGroupDeleteOp() ||
+  LineupGroupReorderOp() => {?rowPage},
+};
+
 StrategyOp _rewritten(StrategyOp op, String opId, int? to) => switch (op) {
   StrategyPatchOp() => StrategyPatchOp(
     opId: opId,

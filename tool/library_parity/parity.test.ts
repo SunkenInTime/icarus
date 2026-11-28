@@ -279,6 +279,23 @@ async function compare(
     }
     entry.compared += 1;
   }
+  if (scenario.trashCase !== undefined) {
+    const last = servers[servers.length - 1] ?? {};
+    const refused = last.status === "failed" && last.code === "PAGE_DELETED";
+    entry.trashCase = {
+      ...scenario.trashCase,
+      server: outcomeName(scenario.ops[scenario.ops.length - 1].type, last),
+    };
+    if (refused !== scenario.trashCase.needsTrashedPage) {
+      entry.difference = {
+        step: scenario.ops.length - 1,
+        problem: refused
+          ? "the server refused it as page deleted, and pagesRequiredLive names no trashed page"
+          : "pagesRequiredLive names a trashed page, and the server did not refuse it as page deleted",
+        trashCase: entry.trashCase,
+      };
+    }
+  }
   if (scenario.expected !== undefined) {
     const unmet = storyProblems(scenario, servers, await dump(t));
     if (unmet.length > 0) {

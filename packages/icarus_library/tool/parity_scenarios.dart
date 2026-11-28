@@ -6,6 +6,7 @@ import 'package:icarus_library/icarus_library.dart';
 
 import 'merge_seeds.dart';
 import 'merge_stories.dart';
+import 'trash_cases.dart';
 
 const _strategyId = 's1';
 const _undoSeeds = 8;
@@ -38,6 +39,7 @@ void main(List<String> args) {
       _write(out, [
         for (final story in mergeStories()) _story(story),
         ...mergeSeedScenarios(rowsJson, _outcome),
+        ...trashCaseScenarios(rowsJson, _outcome),
         for (var seed = 0; seed < _undoSeeds; seed++)
           {
             ..._Generator(

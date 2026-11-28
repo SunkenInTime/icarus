@@ -245,6 +245,19 @@ function main() {
       problems.push(...storyProblems(named, stories));
     }
     const compared = [...report, ...stories].reduce((total, entry) => total + entry.compared, 0);
+    const trashCases = stories.filter((entry) => entry.trashCase !== undefined);
+    const refusedCases = trashCases.filter((entry) => entry.trashCase.needsTrashedPage);
+    console.log(
+      `${trashCases.length} trash cases: pagesRequiredLive and the server agree on ` +
+        `${trashCases.length - trashCases.filter((entry) => entry.difference !== undefined).length}, ` +
+        `${refusedCases.length} refused as page deleted`,
+    );
+    if (process.argv.includes("--trash-table")) {
+      for (const entry of trashCases) {
+        const { kind, rowTrashed, namedTrashed, server } = entry.trashCase;
+        console.log(`${kind} | row ${rowTrashed ? "trashed" : "live"} | named ${namedTrashed ? "trashed" : "live"} | ${server}`);
+      }
+    }
     console.log(
       `${compared} ops in ${report.length} seeded sequences and ${stories.length} ` +
         `merge stories and merge seeds matched convex/ops.ts`,

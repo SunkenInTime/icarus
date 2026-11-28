@@ -614,8 +614,9 @@ void roundTwoTests() {
   group('round 2', () {
     test(
       'A, B: a move onto the deleted page and back, my delete of it, then '
-      'an edit on A: the edit waits behind the held moves, the moves go '
-      'with my delete, and the edit is judged against the server row',
+      'an edit on A: the edit waits behind the moves; only the move the '
+      'server would refuse for the deleted page goes with my delete, and '
+      'the move back, judged against the server row, asks the user',
       () async {
         final store = await openCloudStore(MemoryEngine(MemoryStorage()));
         await addCloud(store, initialRows());
@@ -635,7 +636,9 @@ void roundTwoTests() {
         await listed(store, theyDeleted);
         final views = (await syncOf(store)).views;
         expect(views['to-b']!.holds, contains(const PageInTrash('page-b')));
-        expect(views['to-a']!.holds, contains(const PageInTrash('page-b')));
+        expect(views['to-a']!.holds, [
+          const BehindEntry('to-b', Dependency.sameRow),
+        ]);
         expect(
           views['edit']!.holds,
           contains(const BehindEntry('to-a', Dependency.sameRow)),
@@ -645,24 +648,21 @@ void roundTwoTests() {
           'drop',
         ], Server()..rows = theyDeleted);
         expect(
-          effects,
-          containsAll([
-            const OpRemoved('to-b', LetGoWithItsPage('drop')),
-            const OpRemoved('to-a', LetGoWithItsPage('drop')),
-          ]),
+          effects.whereType<OpRemoved>().where(
+            (effect) => effect.cause is LetGoWithItsPage,
+          ),
+          [const OpRemoved('to-b', LetGoWithItsPage('drop'))],
         );
         expect((await syncOf(store)).queue.entries.map((entry) => entry.id), [
+          'to-a',
           'edit',
         ]);
         await listed(store, theyDeleted);
-        if ((await viewOf(store, 'edit')).sendable) {
-          await answerFrom(store, Server()..rows = theyDeleted);
-        }
-        expect(
-          (await viewOf(store, 'edit')).state,
-          isA<NeedsUser>(),
-          reason: '${await viewOf(store, 'edit')}',
-        );
+        final judged = (await syncOf(store)).views;
+        expect(judged['to-a']!.state, const NeedsUser(ChangedUnseen()));
+        expect(judged['edit']!.holds, [
+          const BehindEntry('to-a', Dependency.sameRow),
+        ]);
       },
     );
 
@@ -706,9 +706,10 @@ void roundTwoTests() {
       },
     );
 
-    test('B, D: an edit in place on the deleted page whose item a teammate '
-        'moved off it first stays when my delete of the page lands, and '
-        'lands where the item is', () async {
+    test('B, D: an edit in place on the deleted page, naming it, whose item '
+        'a teammate moved off it first is held, never sent, and goes with '
+        'my delete of the page, since the server refuses it for the page it '
+        'names', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
       await commit(
@@ -716,6 +717,7 @@ void roundTwoTests() {
         movePatch(
           'edit',
           elementId: 'e3',
+          pageId: 'page-b',
           merge: FieldMerge(fields: ['position']),
         ),
       );
@@ -737,15 +739,28 @@ void roundTwoTests() {
           pageDelete('their-drop', 'page-b', expected: moved.strategy.revision),
         );
       await listed(store, server.rows);
-      expect((await viewOf(store, 'edit')).holds, isEmpty);
-      final effects = await answerOnly(store, ['drop'], server);
-      expect(effects.whereType<OpRemoved>().map((effect) => effect.opId), [
-        'drop',
+      expect((await viewOf(store, 'edit')).holds, [
+        const PageInTrash('page-b'),
       ]);
-      await answerOnly(store, ['edit'], server);
-      expect(server.landed('edit'), isTrue);
+      expect(await sendable(store), ['drop']);
+      expect(
+        applyOp(server.rows, pendingIn(await syncOf(store), 'edit').op),
+        isA<OpRefused>().having(
+          (refused) => refused.refusal,
+          'refusal',
+          const Failed(FailureCode.pageDeleted),
+        ),
+      );
+      final effects = await answerOnly(store, ['drop'], server);
+      expect(
+        effects.whereType<OpRemoved>().map((effect) => effect.opId),
+        unorderedEquals(['edit', 'drop']),
+      );
+      expect(
+        effects,
+        contains(const OpRemoved('edit', LetGoWithItsPage('drop'))),
+      );
       expect(server.rows.element('e3')!.pagePublicId, 'page-a');
-      await listed(store, withoutPage(server.rows, 'page-b'));
       expect((await syncOf(store)).queue.entries, isEmpty);
     });
 
