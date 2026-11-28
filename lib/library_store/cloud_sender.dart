@@ -182,7 +182,7 @@ final class NothingToRead extends ReadOutlook {
   const NothingToRead();
 }
 
-typedef _Request = ({Account account, int signOuts});
+typedef _Request = ({Account account, int signOuts, DateTime at});
 
 sealed class _Candidate {
   const _Candidate();
@@ -296,6 +296,26 @@ final class _Live {
   }
 }
 
+sealed class _Adoption {
+  const _Adoption();
+}
+
+final class _TakeLive extends _Adoption {
+  const _TakeLive(this.result);
+
+  final _LiveResult result;
+}
+
+final class _WaitForLive extends _Adoption {
+  const _WaitForLive(this.until);
+
+  final DateTime until;
+}
+
+final class _ReadToAdopt extends _Adoption {
+  const _ReadToAdopt();
+}
+
 sealed class _LiveGate {
   const _LiveGate();
 }
@@ -338,6 +358,7 @@ final class CloudSender implements LiveResults {
   })  : _store = store,
         _canRead = canRead ?? appCanRead,
         _reconnect = reconnect ?? (() async {}),
+        _editorShows = editorShows ?? (() => null),
         _governor = CallGovernor(
           reads: reads,
           send: send,
@@ -354,6 +375,7 @@ final class CloudSender implements LiveResults {
 
   final Future<({int client, int connection})> Function() _generation;
   final Future<void> Function() _reconnect;
+  final String? Function() _editorShows;
   final CanRead _canRead;
 
   Future<({int client, int connection})> _lookUpGeneration() =>
@@ -849,7 +871,11 @@ final class CloudSender implements LiveResults {
   void adopt(String strategyId) {
     final account = _inputs.account;
     if (account == null) return;
-    _wanted[strategyId] = (account: account, signOuts: _inputs.signOuts);
+    _wanted[strategyId] = (
+      account: account,
+      signOuts: _inputs.signOuts,
+      at: _wanted[strategyId]?.at ?? _clock(),
+    );
     wake();
   }
 
@@ -1016,14 +1042,31 @@ final class CloudSender implements LiveResults {
     }
     const read = ReadOfList();
     final under = readsUnder(snap);
-    final StoreReadOutcome outcome;
-    final DateTime started;
+    StoreReadOutcome? outcome;
+    DateTime? started;
+    _LiveResult? fromLive;
     final kept = _governor.heldFor(id, read, under);
     switch (kept) {
       case (outcome: final held, started: final at, under: _, readIn: _):
         outcome = held;
         started = at;
       case null:
+        switch (_adoptionFromLive(id, account, now, snap)) {
+          case _TakeLive(:final result):
+            switch (await _outcomeOf(id, read, result.answer)) {
+              case final StoreReadAnswered answered:
+                outcome = answered;
+                started = result.at;
+                fromLive = result;
+              case _:
+                _note(id, 'the live page list cannot adopt it; it is read');
+            }
+          case _WaitForLive(:final until):
+            return _Skipped(StallExit.liveNoFirstResult, until);
+          case _ReadToAdopt():
+            break;
+        }
+        if (outcome != null && started != null) break;
         switch (await _issue(id, account, read, snap, _Why.adopt)) {
           case NotYet(:final at, :final why):
             return _Skipped(why ?? StallExit.firstRead, at);
@@ -1071,6 +1114,11 @@ final class CloudSender implements LiveResults {
             return _troubled(id, trouble);
           case WrittenWith(:final session):
             _governor.written(id, read, late: kept != null);
+            if (fromLive != null) {
+              _live[(id, read)]?.written(fromLive);
+              _forgetEnded(id, read);
+              liveTaken++;
+            }
             restarted.add(id);
             if (_inputs != snap || session == null) return const _Restart();
             _wanted.remove(id);
@@ -1099,6 +1147,38 @@ final class CloudSender implements LiveResults {
       case final other:
         return _readRefused(id, account, read, other, snap);
     }
+  }
+
+  _Adoption _adoptionFromLive(
+    String id,
+    Account account,
+    DateTime now,
+    Snapshot snap,
+  ) {
+    const read = ReadOfList();
+    final live = _live[(id, read)];
+    switch (live?.pending) {
+      case final pending? when pending.account == account:
+        return _TakeLive(pending);
+      case _?:
+        _note(id, 'a live page list was read as another account');
+        _owe(id, read);
+        return const _ReadToAdopt();
+      case null:
+        break;
+    }
+    switch (_liveGate(id, read, now, snap)) {
+      case _LiveAwaitingFirst(:final until):
+        return _WaitForLive(until);
+      case _LiveCurrent() || _NotLive():
+        break;
+    }
+    final askedAt = _wanted[id]?.at;
+    if (live == null && askedAt != null && _editorShows() == id) {
+      final until = askedAt.add(_timing.firstLiveResult);
+      if (until.isAfter(now)) return _WaitForLive(until);
+    }
+    return const _ReadToAdopt();
   }
 
   Future<_Step?> _endedTakeUp(
@@ -1150,7 +1230,7 @@ final class CloudSender implements LiveResults {
     _forgetResolved(id, cloud, snap);
     _lastSeen[id] = cloud;
     _countClockHeldByLive(id, cloud, now, snap);
-    if (_unreadPages(cloud).isEmpty) {
+    if (_unreadPages(id, cloud).isEmpty) {
       _unread.remove(id);
     } else {
       _unread.add(id);
@@ -1364,7 +1444,7 @@ final class CloudSender implements LiveResults {
     for (final read in _governor.owedFresh(id)) {
       yield (planned: (read: read, why: _Why.need), wantedAt: now);
     }
-    for (final page in _unreadPages(cloud)) {
+    for (final page in _unreadPages(id, cloud)) {
       yield (planned: (read: ReadOfPage(page), why: _Why.adopt), wantedAt: now);
     }
     for (final (page, at) in retiring.wanted(
@@ -1396,8 +1476,13 @@ final class CloudSender implements LiveResults {
           cloud.queue.shown.pageRead(page) is ReadRefused,
       };
 
-  static List<String> _unreadPages(CloudStrategy cloud) =>
-      cloud.queue.shown.pagesToRead.toList();
+  List<String> _unreadPages(String id, CloudStrategy cloud) {
+    final shown = cloud.queue.shown;
+    return [
+      for (final page in shown.pagesToRead)
+        if ((_live[(id, ReadOfPage(page))]?.watchers ?? 0) > 0) page,
+    ];
+  }
 
   static ReadOf _readOf(ResultSubject subject) => switch (subject) {
         PageListResult() => const ReadOfList(),

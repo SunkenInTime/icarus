@@ -132,7 +132,7 @@ ConvexValue wireList(World world) {
   });
 }
 
-final class LivePageServer implements StampedConvexTransport {
+base class LivePageServer implements StampedConvexTransport {
   LivePageServer(this.world);
 
   final World world;
@@ -156,6 +156,10 @@ final class LivePageServer implements StampedConvexTransport {
 
   Stamped<ConvexValue> _answer(String subject) =>
       StampedValue(_wire(subject), stampOf(world.server.stamp()));
+
+  ConvexValue wireOf(String subject) => _wire(subject);
+
+  Stamped<ConvexValue> answerOf(String subject) => _answer(subject);
 
   void publish(String page) {
     for (final (watched, controller) in _watching) {
@@ -480,6 +484,7 @@ void main() {
         'an edit sent and answered, then seen through the live watch, is '
         'taken by the store, and the open page is never read one-shot', () {
       inWorld((world) {
+        final takenBefore = world.sender.liveTaken;
         final live = LivePageServer(world);
         final container = editorOver(world, live, const CloudStoreSend());
         final shown = <Object>[];
@@ -506,7 +511,7 @@ void main() {
           servedAccount.subject,
         );
         expect(shown, hasLength(2));
-        expect(world.sender.liveTaken, 2);
+        expect(world.sender.liveTaken - takenBefore, 2);
 
         unawaited(watch.cancel());
         container.dispose();
@@ -542,6 +547,7 @@ void main() {
       'with the switch off, the editor watches today\'s queries without the '
       'account, and the store gets nothing from it', () {
     inWorld((world) {
+      final takenBefore = world.sender.liveTaken;
       final live = LivePageServer(world);
       final container = editorOver(world, live, const CloudStoreOff());
       final watch = container
@@ -559,7 +565,7 @@ void main() {
             .containsKey('accountSubject'),
         isFalse,
       );
-      expect(world.sender.liveTaken, 0);
+      expect(world.sender.liveTaken - takenBefore, 0);
       expect(pageResultsWritten(world), hasLength(resultsBefore));
       unawaited(watch.cancel());
       container.dispose();
@@ -571,6 +577,7 @@ void main() {
       'newest only: a burst that arrives while a live result is being taken '
       'leaves only its newest to take after it', () {
     inWorld((world) {
+      final takenBefore = world.sender.liveTaken;
       world.sender.liveOpened(strategyId, openPage);
       world.slowStore.baseWritesWait = const Duration(seconds: 1);
       final delivered = <ResultPoint>[];
@@ -593,7 +600,7 @@ void main() {
         isNot(anyOf(contains(delivered[1]), contains(delivered[2]))),
       );
       expect(world.sender.liveReplaced, 2);
-      expect(world.sender.liveTaken, 2);
+      expect(world.sender.liveTaken - takenBefore, 2);
     });
   });
 
@@ -845,6 +852,7 @@ void main() {
 
     test('a share-link list watch never reaches the store', () {
       inWorld((world) {
+        final takenBefore = world.sender.liveTaken;
         final live = LivePageServer(world);
         final container = editorOver(world, live, const CloudStoreSend());
         final watch = container
@@ -857,7 +865,7 @@ void main() {
         live.publish(theList);
         world.settle();
         expect(listResultsWritten(world), hasLength(before));
-        expect(world.sender.liveTaken, 0);
+        expect(world.sender.liveTaken - takenBefore, 0);
         unawaited(watch.cancel());
         container.dispose();
         world.settle();

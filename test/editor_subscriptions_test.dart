@@ -33,8 +33,6 @@ const todaysCalls = [
 ];
 
 const stampedCalls = [
-  'query strategy:getPageList',
-  'query page:getSnapshot',
   'subscribeStamped strategy:getPageList',
   'subscribeStamped page:getSnapshot',
   'subscribeTogetherStamped page:getFrame,page:getElementSlice,'
@@ -223,7 +221,7 @@ void main() {
             if (call.contains('strategy:')) call,
         ],
         [
-          'query $shellQuery',
+          if (cloud is! CloudStoreSend) 'query $shellQuery',
           '${cloud is CloudStoreSend ? 'subscribeStamped' : 'subscribe'} '
               '$shellQuery',
           'query $shellQuery',
@@ -238,7 +236,10 @@ void main() {
       );
       expect(
         {
-          for (final (name, args) in transport.queriedWith)
+          for (final (name, args) in [
+            ...transport.queriedWith,
+            if (cloud is CloudStoreSend) ...transport.watchedWith,
+          ])
             if (name == 'page:getSnapshot') args['accountSubject'],
         },
         {if (cloud is CloudStoreSend) 'account-a' else null},

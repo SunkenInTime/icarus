@@ -1380,16 +1380,20 @@ Future<StoreVerdict> _againstServer(
   } catch (error) {
     return NotCompared('could not read the server\'s copy: $error');
   }
+  final neverHeld = <String>[];
+  final differences = await differencesFromServer(
+    store,
+    strategyId,
+    rows,
+    account: signedIn,
+    pages: null,
+    neverHeld: neverHeld.add,
+  );
   return Compared(
     pages: list.pages.length,
     unjudged: unjudged,
-    differences: await differencesFromServer(
-      store,
-      strategyId,
-      rows,
-      account: signedIn,
-      pages: null,
-    ),
+    differences: differences,
+    neverHeld: neverHeld,
   );
 }
 
@@ -1402,11 +1406,13 @@ final class Compared extends StoreVerdict {
     required this.pages,
     required this.unjudged,
     required this.differences,
+    this.neverHeld = const [],
   });
 
   final int pages;
   final List<String> unjudged;
   final List<String>? differences;
+  final List<String> neverHeld;
 }
 
 final class NotCompared extends StoreVerdict {
@@ -1471,7 +1477,20 @@ List<CloudStoreLine> comparisonLines({
               problem: false,
             ),
           ],
-        Compared(:final pages, :final unjudged, :final differences) => [
+        Compared(
+          :final pages,
+          :final unjudged,
+          :final differences,
+          :final neverHeld,
+        ) =>
+          [
+            if (neverHeld.isNotEmpty)
+              CloudStoreLine(
+                'CLOUDSTORE compared $when: $strategyId ${neverHeld.length} '
+                'pages never shown or needed, not compared: '
+                '${neverHeld.join(', ')}',
+                problem: false,
+              ),
             if (unjudged.isNotEmpty || differences == null)
               CloudStoreLine(
                 'CLOUDSTORE compared $when: $strategyId has a result of the '

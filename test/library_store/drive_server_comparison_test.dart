@@ -1,11 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
+import 'package:icarus/collab/collab_models.dart' show RemotePageSnapshot;
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus_library/icarus_library.dart';
 
 import 'server_fixtures.dart'
-    show openStore, pageList, pageSnapshot, serverRows, servedAccount;
+    show
+        openStore,
+        pageList,
+        pageSnapshot,
+        secondPage,
+        serverRows,
+        servedAccount;
 
 const point = ResultPoint(client: 1, connection: 1, snapshot: 1);
 
@@ -74,6 +81,49 @@ void main() {
     final moved = serverRows(agentAt: const Offset(300, 400));
     final lines = await readBack(store, serving(moved));
     expect(problems(lines), [matches(RegExp(r'^CLOUDSTORE .*: item \S+: '))]);
+    await store.close();
+  });
+
+  test(
+      'a page the store never held is left out and named; a held page that '
+      'differs still fails', () async {
+    final second = secondPage();
+    final rows = serverRows();
+    final store = await openStore(MemoryStorage());
+    final header = switch (pageListRead(pageList(rows, more: [second]))) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError(problem),
+    };
+    final page = switch (pageRead(pageSnapshot(rows), appCanRead)) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError(problem),
+    };
+    await store.addCloudStrategy(
+      servedAccount,
+      StampedRead(header, point),
+      [StampedRead(page, point)],
+    );
+    final moved = serverRows(agentAt: const Offset(300, 400));
+    final lines = await readBack(
+      store,
+      (
+        pageList: (_) async => pageList(moved, more: [second]),
+        page: (_, pageId) async => pageId == second.page.publicId
+            ? RemotePageSnapshot(
+                page: second.page,
+                content: second.content,
+                elements: const [],
+                lineups: const [],
+                assetsById: const {},
+              )
+            : pageSnapshot(moved),
+      ),
+    );
+    expect(problems(lines), [matches(RegExp(r'^CLOUDSTORE .*: item \S+: '))]);
+    expect(
+      [for (final line in lines) line.text],
+      contains(endsWith('1 pages never shown or needed, not compared: p2')),
+    );
     await store.close();
   });
 
