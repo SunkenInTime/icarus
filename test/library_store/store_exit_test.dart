@@ -16,7 +16,7 @@ final class _SlowClose extends LibraryStoreNotifier {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('the app exits only once the store has closed', () async {
+  test('the close at exit returns only once the store has closed', () async {
     final slow = _SlowClose();
     final container = ProviderContainer(overrides: [
       libraryStoreProvider.overrideWith(() => slow),

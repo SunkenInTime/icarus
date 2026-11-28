@@ -127,11 +127,12 @@ Future<void> _writeHiveLibrary(
   await Hive.close();
 }
 
-Future<(Duration, int)> _timedOpen(File file) async {
+Future<(Duration, int, int)> _timedOpen(File file) async {
   final engine = SqliteEngine(file.path);
   final clock = Stopwatch()..start();
   final store = await openStoreOn(engine);
   final took = clock.elapsed;
+  final rebuilt = store.summariesRebuiltAtOpen;
   final listed = switch (store.library) {
     LibraryOpen(:final list) => list.strategies
         .where((summary) => summary.agentsInOrder.isNotEmpty)
@@ -140,7 +141,7 @@ Future<(Duration, int)> _timedOpen(File file) async {
   };
   await store.close();
   await engine.close();
-  return (took, listed);
+  return (took, listed, rebuilt);
 }
 
 void main() {
@@ -291,18 +292,20 @@ void main() {
         );
         await store.close();
         await engine.close();
-        final (current, _) = await _timedOpen(file);
+        final (current, _, _) = await _timedOpen(file);
         final aging = SqliteEngine(file.path);
         final aged = await ageSummaries(aging);
         await aging.close();
-        final (rebuilding, withAgents) = await _timedOpen(file);
-        final (again, _) = await _timedOpen(file);
+        final (rebuilding, withAgents, rebuilt) = await _timedOpen(file);
+        final (again, _, rebuiltAgain) = await _timedOpen(file);
         debugPrint('700 strategies: open with current summaries '
             '${current.inMilliseconds} ms; with $aged summaries from the '
             'build before, ${rebuilding.inMilliseconds} ms '
             '($withAgents now list agents in order); the open after that, '
-            'with nothing written in between, ${again.inMilliseconds} ms');
+            'with nothing written in between, ${again.inMilliseconds} ms, '
+            'rebuilding $rebuiltAgain');
         expect(aged, 700);
+        expect(rebuilt, 700);
       } finally {
         await Hive.close();
         await scratch.delete(recursive: true);

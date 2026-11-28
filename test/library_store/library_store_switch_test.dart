@@ -95,9 +95,10 @@ void main() {
       'the cloud store is off when nothing asks for it, whatever the library store is',
       () {
     final launch = LibraryStoreLaunch.parse(
-      const ['--library-store=shadow', 'a.ica'],
+      const ['--library-store=store', 'a.ica'],
       mayShadow: true,
     );
+    expect(launch.choice, isA<StoreSwitchStore>());
     expect(launch.cloud, isA<CloudStoreOff>());
   });
 

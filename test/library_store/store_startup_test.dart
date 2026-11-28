@@ -43,6 +43,9 @@ void main() {
         'with no sender', () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);
+      final moving = container
+          .read(libraryStoreProvider.notifier)
+          .open(libraryStoreFile(directory.path));
       final stores = openStores(
         container,
         LibraryStoreLaunch.parse(
@@ -51,13 +54,12 @@ void main() {
         ),
         hiveDirectory: directory.path,
         build: 'b',
-        alreadyOpening: container
-            .read(libraryStoreProvider.notifier)
-            .open(libraryStoreFile(directory.path)),
+        alreadyOpening: moving,
       );
       beginCloudSender(container, stores, build: 'b');
-      await stores.opening;
 
+      expect(stores.opening, same(moving));
+      await stores.opening;
       expect(container.exists(cloudSenderProvider), isFalse);
       await container.read(libraryStoreProvider.notifier).close();
     });
