@@ -331,7 +331,7 @@ final class StoreLibrary {
             source: 'libraryStore.summariesWrittenBack',
             promptUser: false,
           );
-          await _readAgain();
+          _lostIfShut();
         case SaveInDoubt(:final failure):
           AppErrorReporter.reportError(
             'The library store lost the answer to writing back the summaries '
@@ -339,13 +339,19 @@ final class StoreLibrary {
             source: 'libraryStore.lostAnswer',
             promptUser: false,
           );
-          await _readAgain();
+          _lostIfShut();
         case Refused():
           break;
       }
       written.complete(result);
     });
     return written.future;
+  }
+
+  void _lostIfShut() {
+    if (_store.library case LibraryShut(:final failure)) {
+      _lost('the store is shut: $failure');
+    }
   }
 
   Future<void> _readAgain() async {

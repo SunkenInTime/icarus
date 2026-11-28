@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -32,10 +33,16 @@ void main() {
     directory = await Directory.systemTemp.createTemp('icarus-written-back-');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
-    await openScratchHive(directory, strategies: [
-      generatedStrategy(Optionals.unset).copyWith(id: 'a', name: 'A'),
-      generatedStrategy(Optionals.unset).copyWith(id: 'b', name: 'B'),
-    ]);
+    await openScratchHive(
+      directory,
+      strategies: [
+        generatedStrategy(Optionals.unset).copyWith(id: 'a', name: 'A'),
+        generatedStrategy(Optionals.unset).copyWith(id: 'b', name: 'B'),
+      ],
+      folders: [
+        Folder(name: 'Plans', id: 'plans', dateCreated: DateTime.utc(2026)),
+      ],
+    );
   });
   tearDown(() async {
     LocalLibrary.source = const LibraryInHive();
@@ -182,6 +189,40 @@ void main() {
         isA<LibraryServedFromStore>());
     await close(container);
     expect(await rebuiltOnOpen(), 2);
+  });
+
+  test(
+      'a write-back the store refuses while it is still open keeps every held '
+      'record the same object: a folder and a strategy handed out before it '
+      'can still be changed after it', () async {
+    await ageTheStore();
+    final gate = CommitGate()..failNext = true;
+    final firstFrame = Completer<void>();
+    final container = await open(firstFrame: firstFrame.future, gate: gate);
+    const library = LocalLibrary();
+    final folder = library.storedFolder('plans')!;
+    final strategy = library.storedStrategy('a')!;
+
+    firstFrame.complete();
+    await settle();
+
+    expect(LocalLibrary.source, isA<LibraryInStore>());
+    expect(identical(library.storedFolder('plans'), folder), isTrue);
+    expect(
+      await library.restyleFolder(
+        folder,
+        name: 'Retakes',
+        iconId: folder.iconId,
+        customColor: folder.customColor,
+        color: folder.color,
+      ),
+      isA<LibraryWritten>(),
+    );
+    expect(
+      await library.renameStrategy(strategy, 'A again'),
+      isA<LibraryWritten>(),
+    );
+    await close(container);
   });
 
   test(
