@@ -291,7 +291,7 @@ Face? _ownFace(Tally tally, Network network) => switch (tally) {
   Tally(unreadable: > 0) || Tally(readsRefused: > 0) => Face.unreadableWork,
   Tally(setAside: > 0) => Face.strategyReplaced,
   Tally(needingYou: > 0) => Face.needsYou,
-  Tally(total: 0, notYetRead: 0) => null,
+  Tally(total: 0) => null,
   _ when network == Network.offline => Face.offline,
   Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
     Face.answerUnknown,

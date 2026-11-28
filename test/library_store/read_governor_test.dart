@@ -139,8 +139,9 @@ void main() {
 
   group('Sol 4: what is shown while pages are unread', () {
     test(
-        'a strategy whose first page reads are lost is shown as awaiting, '
-        'not saved and not unreadable', () {
+        'a strategy whose first page reads are lost holds none of the '
+        'player\'s work: it is shown saved, not awaiting and not unreadable',
+        () {
       inWorld(
         (world) {
           world.server.overrideRead = (call) => call.page == null
@@ -148,7 +149,8 @@ void main() {
               : const StoreReadLost(TransportFailure.network, 'lost');
           world.sender.adopt(strategyId);
           world.settle(const Duration(hours: 1));
-          expect(world.face(), Face.awaitingResult);
+          expect(world.cloud().queue.shown.content, isEmpty);
+          expect(world.face(), isNull);
         },
         addStrategy: false,
       );

@@ -330,6 +330,24 @@ void main() {
       });
     });
 
+    test(
+        'a store-owned strategy whose list shows a page it has never read, '
+        'with nothing else outstanding, matches the server (the chip shows it '
+        'synced)',
+        () {
+      inWorld((world) {
+        final c = container();
+        addTearDown(c.dispose);
+        fedFrom(world, c);
+        world.settle();
+        world.secondPageOnServer();
+        world.recordRead([world.server.headerOf(strategyId)]);
+        expect(world.cloud().queue.shown.pages.keys, contains('p2'));
+        expect(world.cloud().queue.shown.content.containsKey('p2'), isFalse);
+        expect(aheadIn(c), isA<StoreMatchesServer>());
+      });
+    });
+
     test('names work the server refused as needing the user', () {
       inWorld((world) {
         final c = container();

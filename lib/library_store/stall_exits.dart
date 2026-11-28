@@ -20,7 +20,7 @@ enum StallExit {
         'replaced',
     waitsFor: 'every page the page list shows',
     calls: 'the page list, then each page, one per step',
-    onScreen: Face.awaitingResult,
+    onScreen: null,
     goesAgain: 'each page that is read; a page that will not read climbs the '
         'ladder as a lost read',
   ),
@@ -85,7 +85,7 @@ enum StallExit {
         'result on this connection yet',
     waitsFor: 'the watch\'s first result',
     calls: 'nothing until the bound, then the read the queue asked for',
-    onScreen: Face.awaitingResult,
+    onScreen: null,
     goesAgain: 'the watch\'s first result, which is taken as a read\'s '
         'would be; the page closing; or the bound passing, after which the '
         'page is read as before',
