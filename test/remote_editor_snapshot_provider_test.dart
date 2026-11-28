@@ -119,6 +119,40 @@ void main() {
   });
 
   test(
+      'a strategy whose page list has arrived and whose shown page has not is '
+      'still opening: the editor shows its loading face, not a page', () async {
+    final repository = _Repository();
+    final container = ProviderContainer(overrides: [
+      convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(_IdleMediaQueue.new),
+      cloudMediaAccountIdProvider.overrideWithValue(null),
+    ]);
+    addTearDown(container.dispose);
+    final remote = container.read(remoteEditorSnapshotProvider.notifier);
+    await container.read(remoteEditorSnapshotProvider.future);
+
+    final gate = Completer<void>();
+    repository.pageReadGate = gate;
+    final opening = remote.openStrategy('strategy', activePagePublicId: 'a');
+    await _settle();
+    expect(container.read(remoteEditorSnapshotProvider).isLoading, isTrue);
+    expect(container.read(remoteEditorSnapshotProvider).valueOrNull, isNull);
+    gate.complete();
+    await opening;
+    expect(
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .publicId,
+      'a',
+    );
+  });
+
+  test(
       'a page answer counts as live only on the connection it came on, and '
       'never from the copy', () async {
     final repository = _Repository();
