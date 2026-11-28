@@ -35,6 +35,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy_view.dart';
@@ -1096,6 +1097,104 @@ void main() {
       await tester.tap(find.text('Leave anyway'));
       await tester.pumpAndSettle();
       expect(await guardFuture, isTrue);
+    });
+
+    group('a store-owned strategy', () {
+      Future<Future<bool>> leaving(
+        WidgetTester tester, {
+        required StoreAheadOfServer ahead,
+        bool canvasAhead = false,
+        bool connected = true,
+      }) async {
+        notifier = _FakeGuardStrategyProvider(
+          initialState: const StrategyState(
+            strategyId: 'cloud-strategy',
+            strategyName: 'Cloud Strategy',
+            source: StrategySource.cloud,
+            isOpen: true,
+          ),
+          flushResult: true,
+        );
+        container = ProviderContainer(
+          overrides: [
+            strategyProvider.overrideWith(() => notifier),
+            strategyOpQueueProvider.overrideWith(
+              () => _GuardOpQueue(const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              )),
+            ),
+            cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+            authProvider.overrideWith(_GuardAuthProvider.new),
+            convexConnectionSnapshotProvider.overrideWithValue(connected),
+          ],
+        );
+        addTearDown(container.dispose);
+        final save = container.read(strategySaveStateProvider.notifier)
+          ..beginStoreOwned()
+          ..noteStoreAheadOfServer(ahead);
+        if (canvasAhead) save.markDirty();
+        await pumpHarness(tester);
+        final guard = guardThenIgnoringWhatItSaw(
+          context: context,
+          ref: ref,
+          source: 'guard-test-store-owned',
+          onContinue: () async {},
+        );
+        await tester.pumpAndSettle();
+        return guard;
+      }
+
+      testWidgets('leaves at once when nothing is ahead of the server',
+          (tester) async {
+        final guard =
+            await leaving(tester, ahead: const StoreMatchesServer());
+        expect(find.text('Leave anyway'), findsNothing);
+        expect(await guard, isTrue);
+      });
+
+      testWidgets(
+          'asks before leaving work the store holds unsent, though the old '
+          'queue holds none, and lets it leave', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreSending(1),
+          connected: false,
+        );
+        expect(find.text('Leave anyway'), findsOneWidget);
+        expect(find.textContaining('have not reached the cloud'),
+            findsOneWidget);
+        expect(find.textContaining('saved on this device'), findsOneWidget);
+        await tester.tap(find.text('Leave anyway'));
+        await tester.pumpAndSettle();
+        expect(await guard, isTrue);
+      });
+
+      testWidgets('says refused work is chosen later from the sync button',
+          (tester) async {
+        final guard = await leaving(tester, ahead: const StoreNeedsUser(1));
+        expect(find.textContaining('choose what to keep'), findsOneWidget);
+        await tester.tap(find.text('Stay here'));
+        await tester.pumpAndSettle();
+        expect(await guard, isFalse);
+      });
+
+      testWidgets(
+          'a canvas the store does not hold yet cannot leave anyway, and is '
+          'handed over first', (tester) async {
+        final guard = await leaving(
+          tester,
+          ahead: const StoreMatchesServer(),
+          canvasAhead: true,
+        );
+        expect(notifier.forceSaveCalls, 1);
+        expect(find.text('Leave anyway'), findsNothing);
+        await tester.tap(find.text('Stay here'));
+        await tester.pumpAndSettle();
+        expect(await guard, isFalse);
+      });
     });
 
     testWidgets('offline durable work can leave and remains queued',

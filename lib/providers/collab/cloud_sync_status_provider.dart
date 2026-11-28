@@ -9,6 +9,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 enum CloudSyncStatus { synced, editing, syncing, offline, attention }
@@ -72,6 +73,19 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (ref.watch(clientUpgradeRequiredProvider)) {
     return CloudSyncStatus.attention;
   }
+  if (saveState.storeOwned case final owned?) {
+    return _storeOwnedSyncStatus(
+      owned,
+      mediaErrors: saveState.mediaSyncErrorCount + accountMediaErrorCount,
+      mediaWaiting: saveState.hasPendingMediaSync ||
+          activeMediaJobs.isNotEmpty ||
+          mediaQueueState.jobs.isNotEmpty ||
+          !mediaQueueState.durableLoaded,
+      isConnected: isConnected,
+      sessionStatus: sessionStatus,
+      hasTextDrafts: hasTextDrafts,
+    );
+  }
   if (opQueueState.needsAttention ||
       opQueueState.accountOutbox.needsAttention ||
       saveState.mediaSyncErrorCount > 0 ||
@@ -116,11 +130,49 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   return CloudSyncStatus.synced;
 });
 
+CloudSyncStatus _storeOwnedSyncStatus(
+  StoreOwnedSave owned, {
+  required int mediaErrors,
+  required bool mediaWaiting,
+  required bool isConnected,
+  required ConvexAuthStatus? sessionStatus,
+  required bool hasTextDrafts,
+}) {
+  if (owned.storeAheadOfServer is StoreNeedsUser || mediaErrors > 0) {
+    return CloudSyncStatus.attention;
+  }
+  if (!isConnected || sessionStatus == ConvexAuthStatus.offline) {
+    return CloudSyncStatus.offline;
+  }
+  if (sessionStatus == ConvexAuthStatus.incident) {
+    return CloudSyncStatus.attention;
+  }
+  if (hasTextDrafts) return CloudSyncStatus.editing;
+  if (owned.canvasAheadOfStore || mediaWaiting) return CloudSyncStatus.syncing;
+  if (sessionStatus != null && sessionStatus != ConvexAuthStatus.ready) {
+    return CloudSyncStatus.syncing;
+  }
+  return switch (owned.storeAheadOfServer) {
+    StoreMatchesServer() => CloudSyncStatus.synced,
+    StoreSending() || StoreUnverified() || StoreNeedsUser() =>
+      CloudSyncStatus.syncing,
+  };
+}
+
 /// How many outbox records of the open cloud strategy, for the signed-in
 /// account, hold changes that have not landed.
 final openStrategyUnsentChangesProvider = Provider<int>((ref) {
   final strategy = ref.watch(strategyProvider);
   if (strategy.source != StrategySource.cloud) return 0;
+  final owned = ref.watch(
+    strategySaveStateProvider.select((state) => state.storeOwned),
+  );
+  if (owned != null) {
+    return switch (owned.storeAheadOfServer) {
+      StoreSending(:final ops) || StoreNeedsUser(:final ops) => ops,
+      StoreMatchesServer() || StoreUnverified() => 0,
+    };
+  }
   return ref.watch(strategyOpQueueProvider.select(
     (queue) =>
         queue

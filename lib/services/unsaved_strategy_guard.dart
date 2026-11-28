@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:icarus/strategy/autosave_before_exit.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -165,6 +166,14 @@ Future<LeaveAnswer> _guardCloudStrategyExit({
   required OpenSeen asked,
   required _ExitQuestion question,
 }) async {
+  if (ref.read(strategySaveStateProvider).storeOwned != null) {
+    return _guardStoreOwnedExit(
+      context: context,
+      ref: ref,
+      asked: asked,
+      question: question,
+    );
+  }
   final l10n = context.l10n;
   final openingStrategy = ref.read(strategyProvider);
   final openingSaveState = ref.read(strategySaveStateProvider);
@@ -346,6 +355,87 @@ Future<LeaveAnswer> _guardCloudStrategyExit({
         }
         await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
         break;
+    }
+  }
+}
+
+Future<LeaveAnswer> _guardStoreOwnedExit({
+  required BuildContext context,
+  required WidgetRef ref,
+  required OpenSeen asked,
+  required _ExitQuestion question,
+}) async {
+  final l10n = context.l10n;
+  final strategyId = ref.read(strategyProvider).strategyId;
+  final opening = ref.read(strategySaveStateProvider).storeOwned;
+  if ((ref.read(textDraftProvider).isNotEmpty ||
+          (opening?.canvasAheadOfStore ?? false)) &&
+      strategyId != null) {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
+    try {
+      await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        l10n.unsavedGuardTextEditSyncFailed,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'cloud_store.exit_guard',
+      );
+      return const Stay();
+    }
+  }
+  var leaveIfKept = false;
+  while (true) {
+    final saveState = ref.read(strategySaveStateProvider);
+    final owned = saveState.storeOwned;
+    if (owned == null) return const Stay();
+    final mediaJobs = ref
+        .read(cloudMediaUploadQueueProvider)
+        .jobsForStrategy(ref.read(strategyProvider).strategyId);
+    final ahead = owned.storeAheadOfServer;
+    final unstaged = ref.read(textDraftProvider).isNotEmpty ||
+        owned.canvasAheadOfStore ||
+        mediaJobs.any((job) => !job.referenceDurable);
+    if (!unstaged &&
+        ahead is StoreMatchesServer &&
+        mediaJobs.isEmpty &&
+        saveState.mediaSyncErrorCount == 0) {
+      return Leave(asked);
+    }
+    if (leaveIfKept) {
+      leaveIfKept = false;
+      if (!unstaged) return Leave(asked);
+    }
+    if (!context.mounted) return const Stay();
+    final decision = await _showCloudSyncBlockedDialog(
+      context,
+      question,
+      message: _cloudSyncBlockedMessage(
+        l10n: context.l10n,
+        isConnected: ref.read(convexConnectionSnapshotProvider),
+        cloudError: null,
+        mediaErrorCount: saveState.mediaSyncErrorCount,
+        canLeaveWithDurableWork: !unstaged,
+        hasUnreadableSavedWork: false,
+        hasRefusedWork: ahead is StoreNeedsUser,
+        hasPausedWork: false,
+      ),
+      allowLeaveAnyway: !unstaged,
+      showRetryAuth: ref.read(authProvider).hasActiveAuthIncident,
+    );
+    switch (decision) {
+      case CloudExitDecision.stay:
+        return const Stay();
+      case CloudExitDecision.retryAuth:
+        await ref
+            .read(authProvider.notifier)
+            .reinitializeConvexAuth(source: 'cloud_store_exit_guard');
+      case CloudExitDecision.leaveAnyway:
+        leaveIfKept = true;
+      case CloudExitDecision.retrySync:
+        final strategyId = ref.read(strategyProvider).strategyId;
+        if (strategyId == null) return const Stay();
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
     }
   }
 }
