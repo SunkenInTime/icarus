@@ -271,6 +271,7 @@ final class RandomServer {
     if (older.isEmpty) return null;
     final stale = older[random.nextInt(older.length)];
     _made(what);
+    if (stale.base is PageGone) _made('stale not-found read');
     return ServerResult(stale.base, [what], read: stale.read);
   }
 
@@ -305,10 +306,12 @@ final class RandomServer {
     final page = serverPages[random.nextInt(serverPages.length)];
     if (trashed.contains(page)) {
       _made('trashed page read');
-      return ServerResult(PageGone(page), [
+      final gone = ServerResult(PageGone(page), [
         'trashed page read',
         ..._deliveredPage(page),
       ], read: ++reads);
+      snapshots.add(gone);
+      return gone;
     }
     final leaving = random.nextInt(5) == 0;
     final onPage = [

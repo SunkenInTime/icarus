@@ -6,6 +6,7 @@ import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
@@ -476,14 +477,26 @@ final class FakeServer {
     );
   }
 
+  StoreReadOutcome notFound(String? page) {
+    final error = StampedError<Never>(
+      const ConvexTransportError(rawCode: 'NOT_FOUND', message: 'not found'),
+      _stampOf(stamp()),
+    );
+    return page == null
+        ? pageListOutcomeOf(error)
+        : pageOutcomeOf(error, pagePublicId: page, canRead: appCanRead);
+  }
+
+  static ResultStamp _stampOf(ResultPoint point) => ResultStamp(
+        client: point.client,
+        connection: point.connection,
+        snapshot: point.snapshot,
+        serverTime: point.serverTime,
+      );
+
   StoreReadOutcome _answerRead(ReadCall call) {
     final held = rows[call.strategyId];
-    if (held == null) {
-      return StoreReadAnswered(
-        call.page == null ? const StrategyGone() : PageGone(call.page!),
-        point: stamp(),
-      );
-    }
+    if (held == null) return notFound(call.page);
     final page = call.page;
     if (page == null) {
       return StoreReadAnswered(
@@ -493,9 +506,7 @@ final class FakeServer {
       );
     }
     final pageRow = held.page(page);
-    if (pageRow == null || pageRow is TrashedPage) {
-      return StoreReadAnswered(PageGone(page), point: stamp());
-    }
+    if (pageRow == null || pageRow is TrashedPage) return notFound(page);
     return StoreReadAnswered(
       PageRead(
         page: lived(pageRow),

@@ -93,7 +93,7 @@ typedef Counts = ({Map<String, int> applied, Map<String, int> generated});
 
 Future<Counts> runSeed(int seed, int steps) async {
   final observed = Observed();
-  final server = RandomServer(Random(seed));
+  final server = RandomServer(Random(seed), staleOneIn: 3);
   final applied = <String, int>{};
   final reusing = MemoryStorage();
   final fresh = MemoryStorage();
@@ -108,6 +108,7 @@ Future<Counts> runSeed(int seed, int steps) async {
   final sources = <int, ResultPoint>{};
   final withheld = <(ServerResult, ResultPoint)>[];
   ResultPoint? lastFresh;
+  var changedSinceFresh = false;
   String? lastSubject;
   var lastPage = 0;
   var lastList = 0;
@@ -118,7 +119,10 @@ Future<Counts> runSeed(int seed, int steps) async {
   };
   for (var step = 0; step < steps; step++) {
     final changed = server.random.nextBool();
-    if (changed) server.change();
+    if (changed) {
+      server.change();
+      changedSinceFresh = true;
+    }
     final ServerResult result;
     final ResultPoint asked;
     final bool late;
@@ -134,7 +138,7 @@ Future<Counts> runSeed(int seed, int steps) async {
       late = false;
       final tie =
           !result.stale &&
-          !changed &&
+          !changedSinceFresh &&
           lastFresh != null &&
           subjectOf(result.base) != lastSubject &&
           server.random.nextInt(5) == 0;
@@ -148,6 +152,7 @@ Future<Counts> runSeed(int seed, int steps) async {
       }
       if (!result.stale) {
         lastFresh = asked;
+        changedSinceFresh = false;
         lastSubject = subjectOf(result.base);
         sources[result.read] = asked;
         if (server.random.nextInt(5) == 0) {
@@ -294,5 +299,6 @@ void main() {
     ]) {
       expect(applied[what] ?? 0, greaterThan(20), reason: what);
     }
+    expect(generated['stale not-found read'] ?? 0, greaterThan(100));
   });
 }

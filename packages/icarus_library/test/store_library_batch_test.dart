@@ -23,6 +23,8 @@ final _pool = <LibraryChange>[
     MoveStrategy(id, null),
     MoveStrategy(id, 'f1'),
     MoveStrategy(id, 'f2'),
+    RenameStrategy(id, 'Renamed'),
+    RenameStrategy(id, strategyRow(publicId: id).name),
     RemoveStrategy(id),
   ],
   AddStrategy(sampleStrategy(id: _third, prefix: 'three-')),
@@ -34,6 +36,8 @@ String _describe(LibraryChange change) => switch (change) {
   RemoveFolder(:final folderPublicId) => 'remove folder $folderPublicId',
   MoveStrategy(:final strategyPublicId, :final folderPublicId) =>
     'move $strategyPublicId to $folderPublicId',
+  RenameStrategy(:final strategyPublicId, :final name) =>
+    'rename $strategyPublicId to $name',
   RemoveStrategy(:final strategyPublicId) => 'remove $strategyPublicId',
   AddStrategy(:final rows) => 'add ${rows.strategy.publicId}',
   RemoveUnreadableStrategy(:final ref) => 'remove unreadable ${ref.area}',

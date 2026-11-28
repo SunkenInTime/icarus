@@ -439,7 +439,10 @@ HeaderRead headerReadOf(StrategyRowSet rows) => HeaderRead(
 HeaderRead headerWithTrashedRows(StrategyRowSet rows) => HeaderRead(
   strategy: rows.strategy,
   pages: rows.pages.toList(),
-  settings: rows.settings.toList(),
+  settings: [
+    for (final row in rows.settings)
+      if (rows.page(row.pagePublicId) is! TrashedPage) row,
+  ],
 );
 
 ArrivedBase pageReadOf(StrategyRows rows, String page) =>
