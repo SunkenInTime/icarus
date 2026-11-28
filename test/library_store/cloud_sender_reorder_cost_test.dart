@@ -29,6 +29,9 @@ Map<String, int> callsAfter(
       world.pagesOnServer(pages);
       world.sender.adopt(strategyId);
       world.settle(const Duration(minutes: 1));
+      for (final page in ['p1', ...pages]) {
+        world.show(page);
+      }
       expect(world.face(), isNull);
       final calls = <String>[];
       world.server.onRead = (call) => calls.add('$call');

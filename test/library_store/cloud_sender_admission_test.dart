@@ -523,6 +523,9 @@ void main() {
         world.secondPageOnServer();
         world.sender.adopt(strategyId);
         world.settle();
+        world
+          ..show('p1')
+          ..show('p2');
       },
       storage: storage,
       server: server,

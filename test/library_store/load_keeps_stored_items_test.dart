@@ -81,7 +81,7 @@ void main() {
     appProviderContainer = container;
   });
   setUp(() async => openUnitHive());
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   test(
       'a load puts on the canvas, and a save after one unrelated edit writes '
