@@ -53,6 +53,8 @@ typedef LibraryEditResult = Saving<LibraryEdited, LibraryRefusal>;
 
 typedef RebuildResult = Saving<StrategySummary, CommitRefusal>;
 
+typedef SummariesWrittenBack = Saving<int, Never>;
+
 final class Committed {
   const Committed({required this.change, required this.undo});
 

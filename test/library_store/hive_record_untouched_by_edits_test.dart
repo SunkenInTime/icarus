@@ -589,7 +589,7 @@ void main() {
             ),
           ],
         );
-        final h = await openInEditor(container, strategy, follow: false);
+        final h = await openInEditor(container, strategy);
         addTearDown(h.dispose);
         final held = _hiveBytes(id);
         final shown = _canvas(container);

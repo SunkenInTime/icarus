@@ -12,14 +12,6 @@ final class StoreSwitchOff extends LibraryStoreSwitch {
   const StoreSwitchOff();
 }
 
-final class StoreSwitchShadow extends LibraryStoreSwitch {
-  const StoreSwitchShadow();
-}
-
-final class StoreSwitchMirror extends LibraryStoreSwitch {
-  const StoreSwitchMirror();
-}
-
 final class StoreSwitchStore extends LibraryStoreSwitch {
   const StoreSwitchStore();
 }
@@ -62,15 +54,7 @@ final class LibraryStoreLaunch {
     CloudStoreSwitch cloud = const CloudStoreOff();
     for (final argument in args) {
       switch (argument) {
-        case shadowFlag:
-          choice =
-              mayShadow ? const StoreSwitchShadow() : const StoreSwitchOff();
-        case mirrorFlag:
-          choice =
-              mayShadow ? const StoreSwitchMirror() : const StoreSwitchOff();
-        case readFlag:
-          choice = const StoreSwitchOff();
-        case opsFlag:
+        case shadowFlag || mirrorFlag || readFlag || opsFlag:
           choice = const StoreSwitchOff();
         case storeFlag:
           choice =

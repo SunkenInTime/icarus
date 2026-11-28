@@ -48,7 +48,6 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/widgets/dialogs/left_behind_dialog.dart';
-import 'package:icarus/library_store/library_store_start.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/onboarding/launch_intro.dart';
 import 'package:icarus/onboarding/launch_intro_host.dart';
@@ -82,7 +81,6 @@ import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/library_store/store_startup.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -208,12 +206,11 @@ Future<void> main(List<String> args) async {
         await AppErrorReporter.flushPersistedLog();
         await refuseLaunch('Icarus did not start: ${refused.message}');
       }
-      final storeStart = LibraryStoreStart.of(storeLaunch.choice);
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
-        ...storeStart.overrides,
+        libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
         cloudStoreSwitchProvider.overrideWithValue(storeLaunch.cloud),
       ]);
       final HiveStoreLaunch launch;
@@ -342,6 +339,7 @@ Future<void> main(List<String> args) async {
         build: Settings.versionName,
         bringUpToDate: bringLibraryUpToDate,
         servedAgain: () => tellWhatWasLeftBehind(Future.value()),
+        firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
       );
       await bringLibraryUpToDate();
 
@@ -349,25 +347,9 @@ Future<void> main(List<String> args) async {
         appProviderContainer,
         storeLaunch,
         hiveDirectory: hiveDirectoryPath,
-        allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
         build: Settings.versionName,
         alreadyOpening: movedIntoStore,
       );
-      final shadowStore =
-          switch ((hiveDirectoryPath, stores.opening, storeStart.mode)) {
-        (final String directory, final opening?, final mode?)
-            when stores.localShadow =>
-          (
-            opening: opening,
-            directory: directory,
-            mode: mode,
-          ),
-        _ => null,
-      };
-      if (shadowStore
-          case (mode: Mirroring(:final mirror), opening: _, directory: _)) {
-        LocalLibrary.follower = mirror;
-      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
@@ -443,14 +425,6 @@ Future<void> main(List<String> args) async {
       }
       beginCloudSender(appProviderContainer, stores,
           build: Settings.versionName);
-      if (shadowStore case (:final opening, :final directory, :final mode)) {
-        appProviderContainer.read(shadowProvider.notifier).begin(
-              opening: opening,
-              firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-              hiveDirectory: directory,
-              mode: mode,
-            );
-      }
       tellWhatWasLeftBehind(
         WidgetsBinding.instance.waitUntilFirstFrameRasterized,
       );

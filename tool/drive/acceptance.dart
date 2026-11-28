@@ -14,9 +14,8 @@ needs --exe, a build from tool/drive/build.ps1, and the logged-in desktop.
   dart tool/drive/acceptance.dart --combine DIR,DIR,...
 
 The set is every script under tool/drive/scripts that never signs in, less
-those tool/drive/acceptance.json leaves out by name with a reason: the ones
-that test a mode the store replaces, those waiting on a decision, and those
-that cannot run on this system. That file
+those tool/drive/acceptance.json leaves out by name with a reason: those
+waiting on a decision and those that cannot run on this system. That file
 also says what each script starts on: a fixture written by
 test/library_store/drive_fixtures_test.dart, the library given with
 --library (a Hive store folder, copied, never opened itself), or what the
@@ -55,15 +54,6 @@ final class _Plan {
   _Plan(this.json);
 
   final Map<String, Object?> json;
-
-  Map<String, String> get replaced {
-    final section = json['replaced']! as Map<String, Object?>;
-    final reason = section['reason']! as String;
-    return {
-      for (final name in (section['scripts']! as List).cast<String>())
-        name: reason,
-    };
-  }
 
   Map<String, String> get notOnLinux =>
       (json['notOnLinux']! as Map<String, Object?>).cast<String, String>();
@@ -176,7 +166,6 @@ AcceptanceSet acceptanceSet(Directory repo, {required bool onWindows}) {
       .toList()
     ..sort();
   final leftOut = {
-    ...plan.replaced,
     ...(onWindows ? plan.notOnWindows : plan.notOnLinux),
     ...plan.waiting,
   };

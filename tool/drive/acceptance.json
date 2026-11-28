@@ -1,14 +1,4 @@
 {
-  "replaced": {
-    "reason": "tests a mode the store replaces",
-    "scripts": [
-      "library-store-shadow",
-      "library-store-shadow-hidden",
-      "library-store-mirror-hold",
-      "read-back-cost",
-      "read-back-budget"
-    ]
-  },
   "notOnLinux": {
     "close-with-video-open": "the video player is a web view, which the Linux build does not have",
     "close-after-video-dismissed": "the video player is a web view, which the Linux build does not have",
@@ -23,6 +13,7 @@
     "page-take-budget": "a timing budget set on the PC; this box runs the cloud store's take slower"
   },
   "storeOnly": [
+    "store-start-summaries-local",
     "library-copy-only-local",
     "move-into-store-local",
     "move-into-store-again-local",
@@ -30,6 +21,9 @@
     "store-not-opened-local"
   ],
   "starts": {
+    "store-start-summaries-local": {
+      "fixture": "ICARUS_AGED_STORE_FIXTURE"
+    },
     "move-into-store-local": {
       "fixture": "ICARUS_LEFT_BEHIND_FIXTURE"
     },

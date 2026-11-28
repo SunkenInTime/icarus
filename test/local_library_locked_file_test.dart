@@ -74,4 +74,34 @@ void main() {
 
     expect(written, isA<LibraryWriteFailed>());
   });
+
+  test(
+      'a folder delete whose folder box has closed fails as a value, and the '
+      'strategy in it is deleted as before', () async {
+    final dir = await Directory.systemTemp.createTemp('icarus-partial-');
+    addTearDown(() => dir.delete(recursive: true));
+    Hive.init(dir.path);
+    if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
+    final strategies =
+        await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    final folders = await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    addTearDown(Hive.close);
+    await folders.put(
+      'plans',
+      Folder(name: 'Plans', id: 'plans', dateCreated: DateTime(2025)),
+    );
+    await strategies.put(
+      'inside',
+      _strategy('inside').copyWith(folderID: 'plans'),
+    );
+    await folders.close();
+
+    final deleted = await const LocalLibrary().deleteFoldersWithStrategies(
+      folderIds: ['plans'],
+      strategyIds: ['inside'],
+    );
+
+    expect(deleted, isA<LibraryWriteFailed>());
+    expect(strategies.containsKey('inside'), isFalse);
+  });
 }
