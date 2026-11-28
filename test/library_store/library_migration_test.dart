@@ -69,7 +69,7 @@ const _contents = DeepCollectionEquality();
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(openUnitHive);
-  tearDown(Hive.close);
+  tearDown(closeUnitHive);
 
   StrategyData strategy(String id, {String? folderId, List<int>? sortIndexes}) {
     final made = generatedStrategy(Optionals.unset);

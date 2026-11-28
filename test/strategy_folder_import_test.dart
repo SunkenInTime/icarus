@@ -5,6 +5,7 @@ import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -52,8 +53,12 @@ void main() {
   late Directory tempDir;
   late ProviderContainer container;
 
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('icarus-folder-import-');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, (_) async => tempDir.path);
     Hive.init(tempDir.path);
     if (!_adaptersRegistered) {
       registerIcarusAdapters(Hive);
@@ -73,6 +78,8 @@ void main() {
   tearDown(() async {
     container.dispose();
     await Hive.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }

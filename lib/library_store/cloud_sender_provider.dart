@@ -116,16 +116,28 @@ final storeLiveResultsProvider = Provider<LiveResultsToSender>(
 
 final class LiveResultsToSender implements LiveResults {
   LiveResults _to = const NoLiveResults();
+  final _open = <(String, ReadOf), int>{};
 
-  void attach(CloudSender sender) => _to = sender;
+  void attach(CloudSender sender) {
+    _to = sender;
+    for (final MapEntry(key: (strategyId, subject), value: watches)
+        in _open.entries) {
+      for (var watch = 0; watch < watches; watch++) {
+        sender.liveOpened(strategyId, subject);
+      }
+    }
+  }
 
   void detach(CloudSender sender) {
     if (identical(_to, sender)) _to = const NoLiveResults();
   }
 
   @override
-  void liveOpened(String strategyId, ReadOf subject) =>
-      _to.liveOpened(strategyId, subject);
+  void liveOpened(String strategyId, ReadOf subject) {
+    _open.update((strategyId, subject), (watches) => watches + 1,
+        ifAbsent: () => 1);
+    _to.liveOpened(strategyId, subject);
+  }
 
   @override
   void liveArrived(
@@ -146,8 +158,15 @@ final class LiveResultsToSender implements LiveResults {
       _to.livePageArrived(strategyId, subject, account, answer);
 
   @override
-  void liveClosed(String strategyId, ReadOf subject) =>
-      _to.liveClosed(strategyId, subject);
+  void liveClosed(String strategyId, ReadOf subject) {
+    final key = (strategyId, subject);
+    if ((_open[key] ?? 0) <= 1) {
+      _open.remove(key);
+    } else {
+      _open[key] = _open[key]! - 1;
+    }
+    _to.liveClosed(strategyId, subject);
+  }
 }
 
 class CloudSenderNotifier extends Notifier<CloudSender?> {

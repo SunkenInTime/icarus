@@ -233,12 +233,18 @@ void main() {
 
     setUp(() async {
       hiveDir = await Directory.systemTemp.createTemp('duplicate_test');
+      // Images are files in each strategy's folder under the support
+      // directory; point it into this test's folder.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
       Hive.init(hiveDir.path);
       if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
       await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
     });
 
     tearDown(() async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_pathProvider, null);
       await Hive.close();
       await hiveDir.delete(recursive: true);
     });
@@ -276,13 +282,6 @@ void main() {
 
     test('gives the copy its own image files, which outlive the original',
         () async {
-      // Images are files in each strategy's folder under the support
-      // directory; point it into this test's folder.
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
-      addTearDown(() => TestDefaultBinaryMessengerBinding
-          .instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_pathProvider, null));
       // Export reads the strategy's theme.
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       final pictureBytes = Uint8List.fromList(List.generate(64, (i) => i));
@@ -360,11 +359,6 @@ void main() {
     test(
         'copies only the pictures the strategy shows, and still copies when '
         'one was already missing', () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_pathProvider, (_) async => hiveDir.path);
-      addTearDown(() => TestDefaultBinaryMessengerBinding
-          .instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_pathProvider, null));
       final pictureBytes = Uint8List.fromList([1, 2, 3]);
       await PlacedImageProvider.writeImageBytes(
         imageBytes: pictureBytes,

@@ -537,8 +537,6 @@ final stalls = <StallExit, Stall>{
 const logs = <StallExit, List<String>>{
   StallExit.firstRead: [
     '0 s list',
-    '0 s page p1',
-    '30 s page p2',
   ],
   StallExit.clockOnWatch: [
     '0 s send reorder',
@@ -546,7 +544,6 @@ const logs = <StallExit, List<String>>{
   ],
   StallExit.liveNoFirstResult: [
     '0 s list',
-    '0 s page p1',
     '10 s page p2',
   ],
   StallExit.unsettledResult: [
@@ -772,7 +769,6 @@ const logs = <StallExit, List<String>>{
   StallExit.replaced: [
     '0 s send move-1',
     '0 s list',
-    '0 s page p1',
   ],
   StallExit.deletedOnServer: [
     '0 s send move-1',
@@ -978,6 +974,9 @@ void main() {
             world.pagesOnServer(['p2']);
             world.sender.adopt(strategyId);
             world.settle(const Duration(minutes: 1));
+            world
+              ..show('p1')
+              ..show('p2');
             world.server.overrideRead = (call) => call.page == 'p2'
                 ? const StoreReadAnswered(PageGone('nowhere'),
                     point: stampedWhenAnswered)
@@ -1015,6 +1014,9 @@ void main() {
           world.pagesOnServer(['p2']);
           world.sender.adopt(strategyId);
           world.settle(const Duration(minutes: 1));
+          world
+            ..show('p1')
+            ..show('p2');
           world.server.overrideRead = (call) => call.page == 'p2'
               ? const StoreReadAnswered(PageGone('nowhere'),
                   point: stampedWhenAnswered)

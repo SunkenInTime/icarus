@@ -36,7 +36,7 @@ void main() {
       Folder(name: 'Retakes', id: 'folder-1', dateCreated: DateTime.utc(2026)),
     );
   });
-  tearDown(() async => Hive.close());
+  tearDown(closeUnitHive);
 
   var made = 0;
   Future<StrategyData> stored({Optionals optionals = Optionals.set}) async {

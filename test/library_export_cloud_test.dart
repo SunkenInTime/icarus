@@ -283,6 +283,7 @@ void main() {
     final container = signedIn();
     final staging = await StrategyImportExportService(container)
         .buildLibraryExportDirectoryForTest();
+    addTearDown(() => staging.delete(recursive: true));
     final ica = staging
         .listSync(recursive: true)
         .whereType<File>()
