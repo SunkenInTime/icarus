@@ -23,6 +23,7 @@ import 'aged_summaries.dart';
 import 'hive_scratch.dart';
 
 final _resultsToMakeNewer = Platform.environment['ICARUS_NEWER_RESULTS_STORE'];
+final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
 final _sixtyDrawingsOut =
     Platform.environment['ICARUS_SIXTY_DRAWINGS_FIXTURE'];
@@ -240,6 +241,20 @@ void main() {
     },
     skip: _resultsToMakeNewer == null
         ? 'set ICARUS_NEWER_RESULTS_STORE to a scratch copy of a library store'
+        : false,
+  );
+
+  test(
+    'ages every summary in a store to the version the build before wrote',
+    () async {
+      final engine = SqliteEngine(_storeToAge!);
+      final aged = await ageSummaries(engine);
+      await engine.close();
+      expect(aged, greaterThan(0));
+      debugPrint('aged $aged summaries in $_storeToAge');
+    },
+    skip: _storeToAge == null
+        ? 'set ICARUS_AGE_STORE to a scratch copy of a library store'
         : false,
   );
 }

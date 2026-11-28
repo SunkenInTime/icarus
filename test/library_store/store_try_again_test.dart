@@ -154,6 +154,7 @@ void main() {
       build: 'b',
       bringUpToDate: () async {},
       servedAgain: () => served++,
+      firstFrame: Future.value(),
     );
     expect(onStore(), isA<LibraryServedFromStore>());
     if (cloud) {
@@ -355,6 +356,7 @@ void main() {
         build: 'b',
         bringUpToDate: () async {},
         servedAgain: () => served++,
+        firstFrame: Future.value(),
       );
       beginCloudSender(
         container,

@@ -1894,6 +1894,30 @@ final class LibraryStore {
     return result;
   });
 
+  Future<SummariesWrittenBack> writeBackRebuiltSummaries() => _inTurn(() async {
+    if (_settle() case StorageFailed(:final failure)) {
+      return NotSaved(failure);
+    }
+    final rebuilt = {
+      for (final digest in _unsaved) digest: ?_summaries[digest],
+    };
+    if (rebuilt.isEmpty) return const NothingToSave();
+    return _commit<int, Never>(
+      [
+        for (final MapEntry(key: digest, value: summary) in rebuilt.entries)
+          _PutSummary(digest, summary),
+      ],
+      () {
+        for (final MapEntry(key: digest, value: summary) in rebuilt.entries) {
+          if (identical(_summaries[digest], summary)) {
+            _unsaved.remove(digest);
+          }
+        }
+        return rebuilt.length;
+      },
+    );
+  });
+
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>
       _inTurn(() async {
         if (_settle() case StorageFailed(:final failure)) {

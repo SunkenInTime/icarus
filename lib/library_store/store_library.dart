@@ -317,6 +317,36 @@ final class StoreLibrary {
     return written.future;
   }
 
+  Future<SummariesWrittenBack> writeBackRebuiltSummaries() {
+    final written = Completer<SummariesWrittenBack>();
+    _turn = _turn.then((_) async {
+      final result = await _store.writeBackRebuiltSummaries();
+      switch (result) {
+        case Saved() || NothingToSave():
+          break;
+        case NotSaved(:final failure):
+          AppErrorReporter.reportError(
+            'The library store did not write back the summaries it rebuilt at '
+            'open; the next open rebuilds them again: $failure',
+            source: 'libraryStore.summariesWrittenBack',
+            promptUser: false,
+          );
+        case SaveInDoubt(:final failure):
+          AppErrorReporter.reportError(
+            'The library store lost the answer to writing back the summaries '
+            'it rebuilt at open: $failure',
+            source: 'libraryStore.lostAnswer',
+            promptUser: false,
+          );
+          await _readAgain();
+        case Refused():
+          break;
+      }
+      written.complete(result);
+    });
+    return written.future;
+  }
+
   Future<void> _readAgain() async {
     switch (await _readLibrary(_store)) {
       case _ReadWhole(:final held):

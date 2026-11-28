@@ -13,6 +13,36 @@ import 'support.dart';
 Map<String, Object?> stored(Contents contents, String area, String key) =>
     jsonDecode(contents[area]![key]!) as Map<String, Object?>;
 
+Contents agedSeeded(Contents seeded) {
+  final written =
+      jsonDecode(seeded['library']![summaryName(strategyId)]!)
+          as Map<String, Object?>;
+  final older = {
+    for (final MapEntry(:key, :value) in written.entries)
+      if (key != 'agentsInOrder' && key != 'firstPageIsAttack')
+        key: switch (key) {
+          'summaryVersion' => 5,
+          'tallies' => {
+            for (final MapEntry(:key, :value)
+                in (value! as Map<String, Object?>).entries)
+              key: {
+                for (final MapEntry(:key, value: field)
+                    in (value! as Map<String, Object?>).entries)
+                  if (key != 'order') key: field,
+              },
+          },
+          _ => value,
+        },
+  };
+  return {
+    ...seeded,
+    'library': {
+      ...seeded['library']!,
+      summaryName(strategyId): jsonEncode(older),
+    },
+  };
+}
+
 void main() {
   late Contents seeded;
 
@@ -1060,39 +1090,167 @@ void main() {
         final opened = await openOn(seeded);
         final current = listOf(opened).strategies.single;
         expect(opened.summariesRebuiltAtOpen, 0);
-        final written =
-            jsonDecode(seeded['library']![summaryName(strategyId)]!)
-                as Map<String, Object?>;
-        final older = {
-          for (final MapEntry(:key, :value) in written.entries)
-            if (key != 'agentsInOrder' && key != 'firstPageIsAttack')
-              key: switch (key) {
-                'summaryVersion' => 5,
-                'tallies' => {
-                  for (final MapEntry(:key, :value)
-                      in (value! as Map<String, Object?>).entries)
-                    key: {
-                      for (final MapEntry(:key, value: field)
-                          in (value! as Map<String, Object?>).entries)
-                        if (key != 'order') key: field,
-                    },
-                },
-                _ => value,
-              },
-        };
-        final store = await openOn({
-          ...seeded,
-          'library': {
-            ...seeded['library']!,
-            summaryName(strategyId): jsonEncode(older),
-          },
-        });
+        final store = await openOn(agedSeeded(seeded));
         expect(listOf(store).strategies.single, current);
         expect(store.summariesRebuiltAtOpen, 1);
         expect(current.agentsInOrder, ['jett', 'sova', 'omen', 'kayo']);
         expect(current.firstPageIsAttack, isTrue);
       },
     );
+
+    group('a summary rebuilt at open is written back once', () {
+      test('the next open rebuilds none and lists the same summary', () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(MemoryEngine(disk));
+        final listed = listOf(store).strategies.single;
+        expect(store.summariesRebuiltAtOpen, 1);
+
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<Saved<int, Never>>().having((saved) => saved.value, 'value', 1),
+        );
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<NothingToSave<int, Never>>(),
+        );
+        await store.close();
+
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 0);
+        expect(listOf(next).strategies.single, listed);
+        await next.close();
+      });
+
+      test(
+          'a write-back the device refuses leaves the store open, and the '
+          'next open rebuilds again', () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(
+          flaky(MemoryEngine(disk), {0: Failing.refused}),
+        );
+
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<NotSaved<int, Never>>(),
+        );
+        expect(store.library, isA<LibraryOpen>());
+        await store.close();
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 1);
+        await next.close();
+      });
+
+      for (final (failing, rebuiltNext) in [
+        (Failing.landed, 0),
+        (Failing.lost, 1),
+      ]) {
+        test(
+            'a write-back whose answer is lost (${failing.name}) shuts the '
+            'store as any commit in doubt does, and the next open rebuilds '
+            'what did not land', () async {
+          final disk = MemoryStorage(agedSeeded(seeded));
+          final store = await openStore(
+            flaky(MemoryEngine(disk), {0: failing}),
+          );
+
+          expect(
+            await store.writeBackRebuiltSummaries(),
+            isA<SaveInDoubt<int, Never>>(),
+          );
+          expect(store.library, isA<LibraryShut>());
+          final next = await openStore(MemoryEngine(disk));
+          expect(next.summariesRebuiltAtOpen, rebuiltNext);
+          expect(listOf(next).strategies.single.agentsInOrder,
+              ['jett', 'sova', 'omen', 'kayo']);
+          await next.close();
+        });
+      }
+
+      test(
+          'a save made before the write-back keeps its own summary, and the '
+          'write-back has nothing left to write', () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(await store.commit(
+          strategyId,
+          everyOpType()['strategy.patch']!,
+        ));
+        final saved = listOf(store).strategies.single;
+
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<NothingToSave<int, Never>>(),
+        );
+        await store.close();
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 0);
+        expect(listOf(next).strategies.single, saved);
+        await next.close();
+      });
+
+      test(
+          'a save asked for while the write-back runs waits its turn and its '
+          'summary is the one kept', () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(MemoryEngine(disk));
+
+        final writingBack = store.writeBackRebuiltSummaries();
+        final saving = store.commit(
+          strategyId,
+          everyOpType()['strategy.patch']!,
+        );
+        expect(await writingBack, isA<Saved<int, Never>>());
+        savedValue(await saving);
+        final saved = listOf(store).strategies.single;
+        await store.close();
+
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 0);
+        expect(listOf(next).strategies.single, saved);
+        await next.close();
+      });
+
+      test(
+          'a save already waiting when the write-back is asked for keeps its '
+          'own summary: the write-back never puts the older one over it',
+          () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(MemoryEngine(disk));
+        final rebuilt = listOf(store).strategies.single;
+
+        final saving = store.commit(
+          strategyId,
+          everyOpType()['strategy.patch']!,
+        );
+        final writingBack = store.writeBackRebuiltSummaries();
+        savedValue(await saving);
+        expect(await writingBack, isA<NothingToSave<int, Never>>());
+        final saved = listOf(store).strategies.single;
+        expect(saved, isNot(rebuilt));
+        await store.close();
+
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 0);
+        expect(listOf(next).strategies.single, saved);
+        await next.close();
+      });
+
+      test(
+          'a store closed before the write-back writes nothing, and the next '
+          'open rebuilds again', () async {
+        final disk = MemoryStorage(agedSeeded(seeded));
+        final store = await openStore(MemoryEngine(disk));
+        await store.close();
+
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<NotSaved<int, Never>>(),
+        );
+        final next = await openStore(MemoryEngine(disk));
+        expect(next.summariesRebuiltAtOpen, 1);
+        await next.close();
+      });
+    });
 
     test('a summary this build cannot read is rebuilt from the rows', () async {
       final store = await openOn({

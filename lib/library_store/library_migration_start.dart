@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -50,6 +52,7 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
   required String build,
   required Future<void> Function() bringUpToDate,
   required void Function() servedAgain,
+  required Future<void> firstFrame,
 }) async {
   Future<Future<LibraryStoreOpened>?> move() => moveLibraryIntoStore(
         container,
@@ -65,7 +68,8 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
     tries++;
     await container.read(libraryStoreProvider.notifier).close();
     await move();
-    if (await _serve(container, tryAgain, tries) is LibraryServedFromStore) {
+    if (await _serve(container, tryAgain, tries, firstFrame)
+        is LibraryServedFromStore) {
       await bringUpToDate();
       servedAgain();
     }
@@ -73,7 +77,7 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
 
   tryAgain = () => trying ??= tryOnce().whenComplete(() => trying = null);
   final opening = await move();
-  if (opening != null) await _serve(container, tryAgain, tries);
+  if (opening != null) await _serve(container, tryAgain, tries, firstFrame);
   return opening;
 }
 
@@ -81,6 +85,7 @@ Future<LibraryOnStore> _serve(
   ProviderContainer container,
   Future<void> Function() tryAgain,
   int tries,
+  Future<void> firstFrame,
 ) async {
   final atStart = container.read(libraryMigrationProvider)!;
   final String why;
@@ -95,6 +100,13 @@ Future<LibraryOnStore> _serve(
           )) {
             case StoreLibraryLoaded(:final library):
               LocalLibrary.source = LibraryInStore(library);
+              unawaited(firstFrame.then((_) async {
+                if (LocalLibrary.source
+                    case LibraryInStore(library: final served)
+                    when identical(served, library)) {
+                  await library.writeBackRebuiltSummaries();
+                }
+              }));
               return container.read(libraryOnStoreProvider.notifier).state =
                   LibraryServedFromStore(loading.elapsed);
             case StoreLibraryNotLoaded(why: final notLoaded):

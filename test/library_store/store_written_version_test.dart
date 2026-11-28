@@ -55,6 +55,7 @@ void main() {
       build: '',
       bringUpToDate: () async {},
       servedAgain: () {},
+      firstFrame: Future.value(),
     );
     final onStore = container.read(libraryOnStoreProvider)!;
     var saves = 0;

@@ -339,6 +339,7 @@ Future<void> main(List<String> args) async {
         build: Settings.versionName,
         bringUpToDate: bringLibraryUpToDate,
         servedAgain: () => tellWhatWasLeftBehind(Future.value()),
+        firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
       );
       await bringLibraryUpToDate();
 

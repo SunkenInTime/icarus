@@ -1,0 +1,6 @@
+[
+  {"wait": 3},
+  {"expectMigration": {}},
+  {"wait": 5},
+  {"exit": 1}
+]

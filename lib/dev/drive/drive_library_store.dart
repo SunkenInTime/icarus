@@ -65,6 +65,10 @@ List<String> migrationLines(
       list,
     _ => null,
   };
+  final rebuiltAtOpen = switch (c.read(libraryStoreProvider)) {
+    LibraryStoreReady(:final store) => store.summariesRebuiltAtOpen,
+    _ => null,
+  };
   final inStore = list == null
       ? null
       : list.strategies.where((summary) => summary.sync is KeptHere).length;
@@ -73,6 +77,7 @@ List<String> migrationLines(
     'state': state,
     'inStore': inStore,
     'foldersInStore': list?.folders.length,
+    'rebuiltAtOpen': rebuiltAtOpen,
     'leftBehind': left.length,
     'served': onStore is LibraryServedFromStore,
     'tries': switch (onStore) {
@@ -83,7 +88,8 @@ List<String> migrationLines(
   final lines = [
     'STORE move at start: $state, $inStore strategies and '
         '${list?.folders.length} folders in the store, '
-        '${left.length} left behind',
+        '${left.length} left behind, $rebuiltAtOpen summaries rebuilt at '
+        'open',
     if (atStart?.migration case MigrationFinishedNow(:final record, :final took))
       'STORE move took '
           '${record.finishedAt.difference(record.startedAt).inMilliseconds} ms: '
