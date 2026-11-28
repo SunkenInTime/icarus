@@ -455,6 +455,9 @@ final class LibraryStore {
 
   int get summariesRebuiltAtOpen => _summariesRebuiltAtOpen;
 
+  int get summariesNotWrittenBack =>
+      _unsaved.where((digest) => _summaries[digest]?.sync is KeptHere).length;
+
   int rowsCountedFor(String strategyPublicId) =>
       _strategies[digestOf(strategyPublicId)]?.rowsCounted ?? 0;
 
@@ -1892,6 +1895,33 @@ final class LibraryStore {
       );
     }
     return result;
+  });
+
+  Future<SummariesWrittenBack> writeBackRebuiltSummaries() => _inTurn(() async {
+    if (_settle() case StorageFailed(:final failure)) {
+      return NotSaved(failure);
+    }
+    final rebuilt = {
+      for (final digest in _unsaved)
+        if (_summaries[digest] case final summary?
+            when summary.sync is KeptHere)
+          digest: summary,
+    };
+    if (rebuilt.isEmpty) return const NothingToSave();
+    return _commit<int, Never>(
+      [
+        for (final MapEntry(key: digest, value: summary) in rebuilt.entries)
+          _PutSummary(digest, summary),
+      ],
+      () {
+        for (final MapEntry(key: digest, value: summary) in rebuilt.entries) {
+          if (identical(_summaries[digest], summary)) {
+            _unsaved.remove(digest);
+          }
+        }
+        return rebuilt.length;
+      },
+    );
   });
 
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>

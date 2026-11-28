@@ -281,6 +281,7 @@ final class StoreLibrary {
 
   final LibraryStore _store;
   final void Function(String why) _lost;
+  var _isLost = false;
   final StoreRecords<StrategyData> strategies;
   final StoreRecords<Folder> folders;
   Future<void> _turn = Future.value();
@@ -317,6 +318,55 @@ final class StoreLibrary {
     return written.future;
   }
 
+  Future<SummariesWrittenBack> writeBackRebuiltSummaries({
+    required bool Function() stillServed,
+  }) {
+    final written = Completer<SummariesWrittenBack>();
+    _turn = _turn.then((_) async {
+      if (_isLost || !stillServed()) {
+        written.complete(const NothingToSave());
+        return;
+      }
+      final result = await _store.writeBackRebuiltSummaries();
+      switch (result) {
+        case Saved() || NothingToSave():
+          break;
+        case NotSaved(:final failure):
+          AppErrorReporter.reportError(
+            'The library store did not write back the summaries it rebuilt at '
+            'open; the next open rebuilds them again: $failure',
+            source: 'libraryStore.summariesWrittenBack',
+            promptUser: false,
+          );
+          _lostIfShut();
+        case SaveInDoubt(:final failure):
+          AppErrorReporter.reportError(
+            'The library store lost the answer to writing back the summaries '
+            'it rebuilt at open: $failure',
+            source: 'libraryStore.lostAnswer',
+            promptUser: false,
+          );
+          _lostIfShut();
+        case Refused():
+          break;
+      }
+      written.complete(result);
+    });
+    return written.future;
+  }
+
+  void _becomeLost(String why) {
+    if (_isLost) return;
+    _isLost = true;
+    _lost(why);
+  }
+
+  void _lostIfShut() {
+    if (_store.library case LibraryShut(:final failure)) {
+      _becomeLost('the store is shut: $failure');
+    }
+  }
+
   Future<void> _readAgain() async {
     switch (await _readLibrary(_store)) {
       case _ReadWhole(:final held):
@@ -326,7 +376,7 @@ final class StoreLibrary {
           inFlight.replay();
         }
       case _ReadNot(:final why):
-        _lost(why);
+        _becomeLost(why);
     }
   }
 

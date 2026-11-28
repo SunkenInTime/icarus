@@ -157,6 +157,7 @@ void main() {
           build: '',
           bringUpToDate: () async => broughtUpToDate++,
           servedAgain: () => servedAgain++,
+          firstFrame: Future.value(),
         );
 
     List<String> served() =>

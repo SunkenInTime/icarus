@@ -226,6 +226,7 @@ Future<void> _oneStore(Directory store, Directory root, _Totals totals) async {
       build: '',
       bringUpToDate: () async {},
       servedAgain: () {},
+      firstFrame: Future.value(),
     );
     if (starting.read(libraryOnStoreProvider)
         case final LibraryNotServed notServed) {
