@@ -378,6 +378,29 @@ void main() {
   });
 
   test(
+      'a folder deleted with strategies the store no longer holds still goes, '
+      'with the strategy it does hold, in one write', () async {
+    await _library();
+    final storage = MemoryStorage();
+    final store = await moved(MemoryEngine(storage));
+    LocalLibrary.source = LibraryInStore(await _loaded(store));
+    const library = LocalLibrary();
+
+    expect(
+      await library.deleteFoldersWithStrategies(
+        folderIds: ['folder-2'],
+        strategyIds: ['gone-1', 'c', 'gone-2'],
+      ),
+      isA<LibraryWritten>(),
+    );
+
+    await store.close();
+    final back = await reopened(storage);
+    expect(back.strategies.keys, unorderedEquals(['a', 'b']));
+    expect(back.folders, isNot(contains('folder-2')));
+  });
+
+  test(
       'removing the first drawing of a page writes no element row, and the '
       'page reads back with its drawings in the same order', () async {
     await _library();
