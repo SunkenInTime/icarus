@@ -1528,6 +1528,7 @@ final class CloudSender implements LiveResults {
     _LiveResult result,
   ) async {
     var handled = false;
+    var superseded = false;
     _live[(id, read)]?.taking = result;
     final step = await _answered(
       id,
@@ -1541,6 +1542,7 @@ final class CloudSender implements LiveResults {
       late: false,
       troubled: () {},
       handled: () => handled = true,
+      superseded: () => superseded = true,
     );
     if (_live[(id, read)] case final live?
         when identical(live.taking, result)) {
@@ -1551,7 +1553,7 @@ final class CloudSender implements LiveResults {
     if (handled) {
       _live[(id, read)]?.written(result);
       _forgetEnded(id, read);
-      if (step is _Acted) liveTaken++;
+      if (step is _Acted && !superseded) liveTaken++;
       if (step is! _Acted) _live[(id, read)]?.deliveredOn = null;
     } else if (!troubled) {
       _owe(id, read);
@@ -1571,6 +1573,7 @@ final class CloudSender implements LiveResults {
     required bool late,
     required void Function() troubled,
     void Function()? handled,
+    void Function()? superseded,
   }) async {
     final (:read, :why) = planned;
     final marking = switch (why) {
@@ -1608,8 +1611,15 @@ final class CloudSender implements LiveResults {
             ),
         ]);
         if (disposed) return const _Ended();
+        final olderThanTaken = why == _Why.live &&
+            written is WrittenWith &&
+            written.notApplied.isNotEmpty &&
+            written.notApplied.every((declined) => switch (declined) {
+                  QueueDeclined(why: OlderResult()) => true,
+                  QueueDeclined() || EditGoesThroughCommit() => false,
+                });
         if (written case WrittenWith(:final notApplied)
-            when notApplied.isEmpty) {
+            when notApplied.isEmpty || olderThanTaken) {
           handled?.call();
         }
         switch (written) {
@@ -1628,6 +1638,11 @@ final class CloudSender implements LiveResults {
           case WriteTroubled(:final trouble):
             troubled();
             return _troubled(id, trouble);
+          case WrittenWith() when olderThanTaken:
+            _governor.written(id, read, late: late);
+            superseded?.call();
+            _note(id, 'a live $read older than one already taken owes nothing');
+            return const _Acted();
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
             _governor.written(id, read, late: late);
             return _unsettled(
