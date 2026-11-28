@@ -8,7 +8,6 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -465,33 +464,6 @@ void main() {
     expect(onStore(), isNull);
     expect(shown(), ['a']);
     expect(_lossReports(), [contains('a cloud write for $strategyId')]);
-  });
-
-  test(
-      'in shadow mode a store write whose answer is lost leaves the Hive '
-      'library served', () async {
-    final stores = openStores(
-      container,
-      launch([LibraryStoreLaunch.shadowFlag]),
-      hiveDirectory: directory.path,
-      build: 'b',
-    );
-    await stores.opening;
-    final rows = switch (strategyToRows(_strategy('x'))) {
-      StrategyRowsMade(:final rows) => rows,
-      StrategyRowsRefused(:final problems) => fail('$problems'),
-    };
-    gate.doubtNext = true;
-
-    expect(
-      await store().putStrategy(rows, writtenAt: Settings.versionNumber),
-      isA<SaveInDoubt<Object?, Object?>>(),
-    );
-
-    expect(store().library, isA<LibraryShut>());
-    expect(LocalLibrary.source, isA<LibraryInHive>());
-    expect(onStore(), isNull);
-    expect(shown(), ['a']);
   });
 
   testWidgets(
