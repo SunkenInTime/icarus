@@ -27,6 +27,7 @@ import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_fieldMerge from "../lib/fieldMerge.js";
 import type * as lib_fileNameIds from "../lib/fileNameIds.js";
+import type * as lib_foldChains from "../lib/foldChains.js";
 import type * as lib_functions from "../lib/functions.js";
 import type * as lib_imageAssets from "../lib/imageAssets.js";
 import type * as lib_lineupItems from "../lib/lineupItems.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   "lib/errors": typeof lib_errors;
   "lib/fieldMerge": typeof lib_fieldMerge;
   "lib/fileNameIds": typeof lib_fileNameIds;
+  "lib/foldChains": typeof lib_foldChains;
   "lib/functions": typeof lib_functions;
   "lib/imageAssets": typeof lib_imageAssets;
   "lib/lineupItems": typeof lib_lineupItems;

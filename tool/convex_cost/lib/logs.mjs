@@ -89,8 +89,8 @@ export async function measure(logs, http, work) {
   return { value, entries };
 }
 
-const FOLD = "maintenance:foldContentChanges";
-const isFoldChain = (entry) => entry.caller === "Scheduler" && entry.identifier === FOLD;
+const FOLDS = new Set(["maintenance:scheduledContentFold", "community:scheduledCountFold"]);
+const isFoldChain = (entry) => entry.caller === "Scheduler" && FOLDS.has(entry.identifier);
 
 const LOGGING_LAG_MARGIN_MS = 150;
 const BACKGROUND_JOBS_CAP_MS = 5_000;

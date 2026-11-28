@@ -56,6 +56,12 @@ import { assertKnownMapChange } from "./lib/maps";
 import { createResultValidator, okResultValidator } from "./lib/publicValidators";
 import { readStrategyAgentTypes } from "./lib/strategyAgentSummary";
 import { copyStrategy, deleteStrategyRecord } from "./lib/strategyCopy";
+import {
+  continueFolding,
+  startFolding,
+  sweepFolding,
+  type FoldLeft,
+} from "./lib/foldChains";
 
 export const foldCountChangesRef = makeFunctionReference<"mutation">(
   "community:foldCountChanges",
@@ -691,14 +697,14 @@ export const setStar = mutation({
         userId: user._id,
         createdAt: Date.now(),
       });
-      await ctx.db.insert("communityCountChanges", {
+      await recordCountChange(ctx, {
         postId: post._id,
         stars: 1,
         copies: 0,
       });
     } else if (!args.starred && existing !== null) {
       await ctx.db.delete(existing._id);
-      await ctx.db.insert("communityCountChanges", {
+      await recordCountChange(ctx, {
         postId: post._id,
         stars: -1,
         copies: 0,
@@ -796,7 +802,7 @@ export const copyPost = mutation({
       createdAt: now,
     });
     if (counted) {
-      await ctx.db.insert("communityCountChanges", {
+      await recordCountChange(ctx, {
         postId: post._id,
         stars: 0,
         copies: 1,
@@ -1036,34 +1042,55 @@ export const notifyReviewers = internalAction({
 
 const FOLD_BATCH = 1000;
 
-/// Folds stars, unstars and copies into their posts' counts. Runs every few
-/// minutes, so a busy post is written once per run instead of once per
-/// star, and the feed's cached pages stay valid between runs.
+async function recordCountChange(
+  ctx: MutationCtx,
+  change: { postId: Id<"communityPosts">; stars: number; copies: number },
+): Promise<void> {
+  await ctx.db.insert("communityCountChanges", change);
+  await startFolding(ctx, "communityCounts");
+}
+
+/// Folds stars, unstars and copies into their posts' counts. Runs minutes
+/// after the first change it folds, so a busy post is written once per run
+/// instead of once per star, and the feed's cached pages stay valid between.
+async function foldCountBatch(
+  ctx: MutationCtx,
+): Promise<Extract<FoldLeft, "fullBatch" | "nothing">> {
+  const changes = await ctx.db.query("communityCountChanges").take(FOLD_BATCH);
+  const byPost = new Map<Id<"communityPosts">, { stars: number; copies: number }>();
+  for (const change of changes) {
+    const total = byPost.get(change.postId) ?? { stars: 0, copies: 0 };
+    total.stars += change.stars;
+    total.copies += change.copies;
+    byPost.set(change.postId, total);
+    await ctx.db.delete(change._id);
+  }
+  for (const [postId, total] of byPost) {
+    if (total.stars === 0 && total.copies === 0) continue;
+    const post = await ctx.db.get(postId);
+    if (post === null) continue;
+    await ctx.db.patch(postId, {
+      starCount: Math.max(0, post.starCount + total.stars),
+      copyCount: Math.max(0, post.copyCount + total.copies),
+    });
+  }
+  return changes.length === FOLD_BATCH ? "fullBatch" : "nothing";
+}
+
 export const foldCountChanges = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    const changes = await ctx.db.query("communityCountChanges").take(FOLD_BATCH);
-    const byPost = new Map<Id<"communityPosts">, { stars: number; copies: number }>();
-    for (const change of changes) {
-      const total = byPost.get(change.postId) ?? { stars: 0, copies: 0 };
-      total.stars += change.stars;
-      total.copies += change.copies;
-      byPost.set(change.postId, total);
-      await ctx.db.delete(change._id);
-    }
-    for (const [postId, total] of byPost) {
-      if (total.stars === 0 && total.copies === 0) continue;
-      const post = await ctx.db.get(postId);
-      if (post === null) continue;
-      await ctx.db.patch(postId, {
-        starCount: Math.max(0, post.starCount + total.stars),
-        copyCount: Math.max(0, post.copyCount + total.copies),
-      });
-    }
-    if (changes.length === FOLD_BATCH) {
-      await ctx.scheduler.runAfter(0, foldCountChangesRef, {});
-    }
+    await sweepFolding(ctx, "communityCounts", await foldCountBatch(ctx));
+    return null;
+  },
+});
+
+export const scheduledCountFold = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await continueFolding(ctx, "communityCounts", await foldCountBatch(ctx));
     return null;
   },
 });
