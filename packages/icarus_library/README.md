@@ -1860,6 +1860,14 @@ and `_judge` is the only place an outgoing revision is chosen.
   waits only after a session opens: such an op made behind landed work, or
   behind work queued in an earlier session, waits for its row's first result
   in the new session.
+- An op the server refuses as `PAGE_DELETED` needs the user as
+  `RefusedAsPageDeleted`, counted on its own (`Attention.refusedAsPageDeleted`)
+  so the sync UI can ask one question for all of them. The queue never holds
+  it, sends it again or settles it from a page list: a teammate restoring the
+  page changes nothing until the user answers. The answers are the ones every
+  refusal has. Keep mine, once the page is restored, sends it under the new id
+  it is given; Discard lets it go. After a purge, keep mine is refused as
+  `not_found` like any other refusal.
 - A page add, reorder or delete answers only the strategy revision, so the
   pages it renumbers are not justified by the answer, and a page rename
   behind one waits for a page list.

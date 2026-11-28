@@ -713,8 +713,8 @@ final class Model {
           reason: RefusedByServer(
             refusal: RejectedByServer() || FailedOnServer(),
           ),
-        ) =>
-          server.landed(entry.id),
+        ) ||
+        NeedsUser(reason: RefusedAsPageDeleted()) => server.landed(entry.id),
         _ => false,
       };
       if (bad) throw StateError('${entry.id} is $state against the server');
@@ -2020,6 +2020,9 @@ final class Model {
         _ => false,
       };
       if (forgotten) count('forgotten answers handed to the user');
+      if (view?.state case NeedsUser(reason: RefusedAsPageDeleted())) {
+        count('refused as page deleted, handed to the user');
+      }
       final retriedAfterTheLadder = action is UserRetried;
       if (draining && retriedAfterTheLadder) {
         count('ladders run out by lost answers, retried in the drain');
@@ -2225,6 +2228,7 @@ void runSeed(int seed, int steps, {required bool folding}) {
 }
 
 const minimums = {
+  'refused as page deleted, handed to the user': 4,
   'OpAnswered': 2000,
   'TransportFailed': 200,
   'AppRestarted': 200,

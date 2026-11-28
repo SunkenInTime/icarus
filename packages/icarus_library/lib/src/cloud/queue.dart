@@ -475,6 +475,19 @@ final class Oversized extends UserReason {
   String toString() => 'oversized';
 }
 
+final class RefusedAsPageDeleted extends UserReason {
+  const RefusedAsPageDeleted();
+
+  @override
+  bool operator ==(Object other) => other is RefusedAsPageDeleted;
+
+  @override
+  int get hashCode => (RefusedAsPageDeleted).hashCode;
+
+  @override
+  String toString() => 'refused because its page was deleted';
+}
+
 final class RowPageGone extends UserReason {
   const RowPageGone();
 
@@ -3057,6 +3070,7 @@ void _landed(
 bool _userMayReplace(EntryView view) => switch (view.state) {
   NeedsUser(
     reason: RefusedByServer() ||
+        RefusedAsPageDeleted() ||
         ChangedUnseen() ||
         ChangedSinceDrawn() ||
         WindowClosed() ||

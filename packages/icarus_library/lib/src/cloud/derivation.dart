@@ -772,6 +772,7 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         Oversized() => Attention.oversized,
         ChangedUnseen() => Attention.changedUnseen,
         RowPageGone() => Attention.pageGone,
+        RefusedAsPageDeleted() => Attention.refusedAsPageDeleted,
         RetiredFormat() => Attention.retiredFormat,
       }),
       Waiting() || Unanswered() || RefusedAgain()
@@ -789,6 +790,12 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
 
 PendingState stateOf(CloudQueue queue, PendingOp entry) {
   switch (entry.refusal) {
+    case RefusedWith(
+      refusal: FailedOnServer(
+        code: KnownFailure(code: FailureCode.pageDeleted),
+      ),
+    ):
+      return const NeedsUser(RefusedAsPageDeleted());
     case RefusedWith(:final refusal):
       return NeedsUser(RefusedByServer(refusal));
     case ConflictedAtCommit(:final reason):
