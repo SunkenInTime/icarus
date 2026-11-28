@@ -8,6 +8,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -27,7 +28,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../library_rows/generated_strategies.dart';
 import 'gated_engine.dart';
-import 'sender_world.dart' show FakeServer, World;
+import 'sender_world.dart' show FakeServer, ReadCall, World;
 import 'server_fixtures.dart' show serverRows, servedAccount, strategyId;
 import 'unit_harness.dart';
 
@@ -301,11 +302,35 @@ void main() {
     expect(store().isOpen, isTrue);
   });
 
+  Future<void> pageShown(CloudSender sender) async {
+    final page = serverRows().pages.first.publicId;
+    sender
+      ..liveOpened(strategyId, ReadOfPage(page))
+      ..liveArrived(
+        strategyId,
+        ReadOfPage(page),
+        servedAccount,
+        server.answerNow(ReadCall(strategyId, page, servedAccount)),
+      );
+    for (var waited = 0;; waited++) {
+      if (switch (await store().readPage(strategyId, page)) {
+        Found(:final value) => value.elements.isNotEmpty,
+        _ => false,
+      }) {
+        break;
+      }
+      if (waited == 5000) fail('waited too long for the page shown');
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    sender.liveClosed(strategyId, ReadOfPage(page));
+  }
+
   Future<void> sentOnce(String opId) async {
     final sender = container.read(cloudSenderProvider)!;
     expect(identical(sender.store.store, store()), isTrue);
     sender.adopt(strategyId);
     await _until('the adoption', () => !sender.adopting(strategyId));
+    await pageShown(sender);
     final element = switch (await store().readPage(
       strategyId,
       serverRows().pages.first.publicId,
@@ -400,6 +425,7 @@ void main() {
     final first = container.read(cloudSenderProvider)!;
     first.adopt(strategyId);
     await _until('the adoption', () => !first.adopting(strategyId));
+    await pageShown(first);
     final element = switch (await store().readPage(
       strategyId,
       serverRows().pages.first.publicId,
