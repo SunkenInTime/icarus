@@ -135,7 +135,7 @@ void main() {
     final shown = shownOfRows();
     final both = shown
         .taken(
-          headerReadOf(
+          headerWithTrashedRows(
             rows.withRows([
               page('page-b', sortIndex: 1, deleted: true, revision: 2),
             ]),

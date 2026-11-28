@@ -488,19 +488,6 @@ final class RefusedAsPageDeleted extends UserReason {
   String toString() => 'refused because its page was deleted';
 }
 
-final class RowPageGone extends UserReason {
-  const RowPageGone();
-
-  @override
-  bool operator ==(Object other) => other is RowPageGone;
-
-  @override
-  int get hashCode => (RowPageGone).hashCode;
-
-  @override
-  String toString() => 'its page is gone';
-}
-
 final class ChangedUnseen extends UserReason {
   const ChangedUnseen();
 
@@ -2421,9 +2408,7 @@ final class _AwaitRow extends _Verdict {
 }
 
 final class _AskUser extends _Verdict {
-  const _AskUser([this.reason = const ChangedUnseen()]);
-
-  final UserReason reason;
+  const _AskUser();
 }
 
 enum _Writes { wholeRow, putBack, fields, other }
@@ -2530,11 +2515,6 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (!entry.behindOwn) return _NameAt(authored);
       return _wholeBehindOwn(queue, entry, row, authored);
     case _Writes.putBack:
-      if (entry.scope case OnPage(
-        :final pagePublicId,
-      ) when _pageGone(queue.shown, pagePublicId)) {
-        return const _AskUser(RowPageGone());
-      }
       final seen = entry.authored;
       final delete = queue.landed
           .where(
@@ -2553,6 +2533,15 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
             when revision == authored && digest == seen.digest =>
           _NameAt(authored, until: until),
         _KnownRow(current: true) => const _AskUser(),
+        _
+            when switch (entry.scope) {
+              OnPage(:final pagePublicId) => _pageGone(
+                queue.shown,
+                pagePublicId,
+              ),
+              _ => false,
+            } =>
+          _NameAt(authored, until: until),
         _KnownRow(:final page) => _AwaitRow(page, until: until),
         _ => _AwaitRow(switch (entry.scope) {
           OnPage(:final pagePublicId) => pagePublicId,
@@ -2619,6 +2608,14 @@ bool _pageGone(Shown shown, String page) =>
         (shown.highest.containsKey(PageTarget(page)) ||
             shown.goneThisSession.contains(page)));
 
+bool _deletesOffAGonePage(Shown shown, StrategyOp op) => switch (op) {
+  ElementDeleteOp(:final pagePublicId) ||
+  LineupGroupDeleteOp(
+    :final pagePublicId,
+  ) => _pageGone(shown, shown.rows[targetOf(op)]?.page ?? pagePublicId),
+  _ => false,
+};
+
 bool _deletes(StrategyOp op) =>
     op is ElementDeleteOp || op is LineupGroupDeleteOp;
 
@@ -2642,9 +2639,7 @@ _Verdict _wholeBehindOwn(
     (_, _, Moving(:final from)) => from,
     _ => null,
   };
-  if (page != null && _pageGone(shown, page)) {
-    return const _AskUser(RowPageGone());
-  }
+  if (page != null && _pageGone(shown, page)) return _NameAt(authored);
   final renumbering =
       row is PageTarget &&
       queue.landed.any(
@@ -2800,7 +2795,9 @@ StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
     sendForm(
       entry.op,
       sendPolicy(
-        madeChecked: entry.madeAs == MadeAs.checked,
+        madeChecked:
+            entry.madeAs == MadeAs.checked ||
+            _deletesOffAGonePage(queue.shown, entry.op),
         attempted: (queue._index.attemptsByOp[entry.id] ?? const []).isNotEmpty,
         connected: queue.session.connected,
         writtenThisSession: entry.authoredIn == queue.session.number,
@@ -3074,8 +3071,7 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
         ChangedUnseen() ||
         ChangedSinceDrawn() ||
         WindowClosed() ||
-        WrittenLongAgo() ||
-        RowPageGone(),
+        WrittenLongAgo(),
   ) =>
     true,
   _ => false,

@@ -9,7 +9,6 @@ enum Attention {
   failedOnServer,
   oversized,
   changedUnseen,
-  pageGone,
   refusedAsPageDeleted,
   serverForgotAnswer,
   writtenLongAgo,

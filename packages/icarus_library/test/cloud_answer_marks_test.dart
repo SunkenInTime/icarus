@@ -356,8 +356,9 @@ void main() {
   });
 
   group('a page the queue holds as gone', () {
-    test('a page-gone from before our answer on the page does not make an '
-        'edit behind our own work on it ask the user; one from after does', () {
+    test('a page-gone from before or after our answer on the page never makes '
+        'an edit behind our own work on it ask the user here: it is sent for '
+        'the server to judge', () {
       final client = connectedOn();
       client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
       client.must(arrivalAt(client, pageA(), pointAt(3)));
@@ -375,8 +376,15 @@ void main() {
       expect(client.queue.shown.goneThisSession, contains('page-a'));
       expect(client.queue.shown.pageCurrent('page-a'), isFalse);
       expect(stateIn(client, 'second'), isNot(isA<NeedsUser>()));
+      expect(client.view('second').sendable, isTrue);
       client.must(arrivalAt(client, const PageGone('page-a'), pointAt(12)));
-      expect(stateIn(client, 'second'), const NeedsUser(RowPageGone()));
+      expect(stateIn(client, 'second'), isNot(isA<NeedsUser>()));
+      expect(client.view('second').sendable, isTrue);
+      client.claim(['second']);
+      expect(
+        (client.lastSent().single as ElementPatchOp).expectedElementRevision,
+        2,
+      );
     });
   });
 

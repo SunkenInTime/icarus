@@ -771,7 +771,6 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         DeleteHeld() => Attention.heldPageDelete,
         Oversized() => Attention.oversized,
         ChangedUnseen() => Attention.changedUnseen,
-        RowPageGone() => Attention.pageGone,
         RefusedAsPageDeleted() => Attention.refusedAsPageDeleted,
         RetiredFormat() => Attention.retiredFormat,
       }),
@@ -989,10 +988,8 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         if (deadline != null && (until == null || deadline.isBefore(until))) {
           until = deadline;
         }
-      case _AskUser(reason: RowPageGone()) when entry.work is CheckedDelete:
-        break;
-      case _AskUser(:final reason):
-        return (EntryView(NeedsUser(reason), const []), null);
+      case _AskUser():
+        return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
     }
   }
   if (entry.work case final CheckedDelete work when head) {

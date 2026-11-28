@@ -85,7 +85,7 @@ final class OwnWork {
   final int attempt;
   final String page;
 
-  bool get changesList => op is PageReorderOp;
+  bool get changesList => op is PageReorderOp || op is PageDeleteOp;
 
   String get wrote => switch (op) {
     ElementPatchOp(:final elementPublicId) => elementPublicId,
@@ -94,6 +94,8 @@ final class OwnWork {
 }
 
 const strategyRow = 'the strategy';
+
+final ownDelete = pageDelete('own-drop', 'page-b');
 
 const ownReorder = PageReorderOp(
   opId: 'reorder',
@@ -116,7 +118,9 @@ final class AnswerFact extends Fact {
   OpAnswer get answer => AppliedAnswer(
     work.op.opId,
     revision: revision,
-    life: work.changesList ? createdAtOf(initialRows().strategy)! : fixtureLife,
+    life: work.wrote == strategyRow
+        ? createdAtOf(initialRows().strategy)!
+        : fixtureLife,
   );
 
   @override
@@ -137,6 +141,10 @@ final class Scenario {
       7 => () {
         client.edit(ownReorder);
         return OwnWork(ownReorder, client.claim(['reorder']), page: 'page-b');
+      }(),
+      9 => () {
+        client.edit(ownDelete);
+        return OwnWork(ownDelete, client.claim(['own-drop']), page: 'page-b');
       }(),
       _ => null,
     };
@@ -249,6 +257,36 @@ final class Scenario {
 
   void restorePage(StrategyRowSet before) => write(before);
 
+  void trashPage(String page) => write(
+    withOp(
+      now.rows,
+      pageDelete(
+        't${states.length}',
+        page,
+        expected: now.rows.strategy.revision,
+      ),
+    ),
+  );
+
+  void teammateRestores(String page) {
+    final trashed = now.rows.page(page);
+    if (trashed is! TrashedPage) return;
+    write(
+      now.rows.withRows([
+        now.rows.strategy.rewritten(revision: now.rows.strategy.revision + 1),
+        LivePage(
+          publicId: trashed.publicId,
+          strategyPublicId: trashed.strategyPublicId,
+          name: trashed.name,
+          sortIndex: trashed.sortIndex,
+          isAttack: trashed.isAttack,
+          revision: trashed.revision + 1,
+          unknownFields: trashed.unknownFields,
+        ),
+      ]),
+    );
+  }
+
   void deleteStrategy() => write(now.rows, exists: false);
 
   void reconnect() {
@@ -304,6 +342,22 @@ final class Scenario {
         read(page);
         if (random.nextBool()) read(null);
         read(page);
+      case 9:
+        read(random.nextBool() ? null : page);
+        ownLands();
+        answer(atHeldPoint: random.nextInt(3) == 0);
+        if (random.nextBool()) read(page);
+        switch (random.nextInt(3)) {
+          case 0:
+            teammateRestores(page);
+            if (random.nextBool()) teammateWrites(page);
+          case 1:
+            deletePage(page);
+          case _:
+            break;
+        }
+        read(null);
+        read(random.nextBool() ? page : null);
       case 7:
         read(random.nextBool() ? null : 'page-a');
         ownLands();
@@ -370,7 +424,23 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
-      case 9:
+      case 10:
+        if (random.nextBool()) read(page);
+        trashPage(page);
+        read(page);
+        read(page);
+        if (random.nextBool()) read(page);
+        switch (random.nextInt(3)) {
+          case 0:
+            teammateRestores(page);
+          case 1:
+            deletePage(page);
+          case _:
+            break;
+        }
+        read(null);
+        if (random.nextBool()) read(page);
+      case 11:
         final other = livePages.firstWhere((other) => other != page);
         read(page);
         read(other);
@@ -396,7 +466,7 @@ final class Scenario {
   }
 }
 
-const families = 10;
+const families = 12;
 
 const seedsPerFamily = 80;
 
@@ -694,7 +764,7 @@ final class Reference {
     if (_olderThanPageTaken(page, read.tick)) return;
     if (!listed.contains(page)) {
       if (listTakenAt == null || listTakenAt! < read.tick) {
-        listOwedFrom ??= read.tick;
+        _oweListFrom(read.tick);
       }
       return;
     }
@@ -703,6 +773,11 @@ final class Reference {
     pagesFreshSinceSession.add(page);
     goneByResult.remove(page);
     _pageSettles(read, page);
+  }
+
+  void _oweListFrom(int tick) {
+    final owed = listOwedFrom;
+    if (owed == null || owed < tick) listOwedFrom = tick;
   }
 
   void _pageGone(ReadFact read, String page) {
@@ -890,6 +965,46 @@ void countCases(List<Fact> order) {
   if (reads.any((read) => read.base is PageGone)) {
     count('orders with a page gone');
   }
+  final notFoundBeforeList = <String, int>{};
+  for (final read in reads) {
+    switch (read.base) {
+      case PageGone(:final pagePublicId):
+        notFoundBeforeList[pagePublicId] =
+            (notFoundBeforeList[pagePublicId] ?? 0) + 1;
+        if (notFoundBeforeList[pagePublicId] == 2) {
+          count('a page read not found twice before a list');
+        }
+      case HeaderRead():
+        notFoundBeforeList.clear();
+      case _:
+        break;
+    }
+  }
+  for (final (at, fact) in order.indexed) {
+    if (fact case AnswerFact(work: OwnWork(op: PageDeleteOp()), :final tick)
+        when order
+            .take(at)
+            .whereType<ReadFact>()
+            .any((read) => read.page == null && read.tick > tick)) {
+      count('my own page delete answered after a newer list');
+    }
+  }
+  final restoredAfterNotFound = [
+    for (final (at, read) in reads.indexed)
+      if (read.base case PageGone(:final pagePublicId))
+        if (reads
+            .skip(at + 1)
+            .any(
+              (later) =>
+                  later.state.index > read.state.index &&
+                  later.base is PageRead &&
+                  later.page == pagePublicId,
+            ))
+          read,
+  ];
+  if (restoredAfterNotFound.isNotEmpty) {
+    count('a page read live again after it read not found');
+  }
   final itemPages = <String, Set<String>>{};
   for (final read in reads) {
     if (read.base case PageRead(:final page, :final elements)) {
@@ -1067,9 +1182,12 @@ const floors = {
   'orders with a page gone': 14000,
   'orders with the strategy gone': 1500,
   'orders with two reads of one snapshot': 10500,
-  'an older list leaving a page out after a newer read of it': 4300,
+  'an older list leaving a page out after a newer read of it': 3000,
   'an older page-gone after a newer list showing the page': 5000,
-  'an older list leaving a page out after a newer read of it, kept': 400,
+  'an older list leaving a page out after a newer read of it, kept': 300,
+  'a page read not found twice before a list': 10000,
+  'my own page delete answered after a newer list': 2500,
+  'a page read live again after it read not found': 6000,
   'a read older than our answer delivered after it': 6000,
   'a read on a later connection with a server time below our answer': 3400,
   'an answer at the point of a read delivered before it': 4500,

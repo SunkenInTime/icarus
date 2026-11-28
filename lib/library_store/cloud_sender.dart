@@ -1362,6 +1362,11 @@ final class CloudSender implements LiveResults {
       );
     }
     for (final read in _governor.owedFresh(id)) {
+      if (read case ReadOfPage(:final page)
+          when cloud.queue.shown.pagesSeen[page]?.gone ?? false) {
+        _governor.written(id, read);
+        continue;
+      }
       yield (planned: (read: read, why: _Why.need), wantedAt: now);
     }
     for (final page in _unreadPages(id, cloud)) {

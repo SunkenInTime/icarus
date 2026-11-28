@@ -279,7 +279,6 @@ void main() {
     for (final what in const [
       'an item seen on another page',
       'an item seen with another payload on its page in its life',
-      'a trashed page row delivered',
       'deleted',
       'restored',
       'life changed at the same revision',

@@ -24,7 +24,6 @@ enum Kind {
   deleteHeld,
   oversized,
   changedUnseen,
-  rowPageGone,
   refusedAsPageDeleted,
   retired,
 }
@@ -45,7 +44,6 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       DeleteHeld() => Kind.deleteHeld,
       Oversized() => Kind.oversized,
       ChangedUnseen() => Kind.changedUnseen,
-      RowPageGone() => Kind.rowPageGone,
       RefusedAsPageDeleted() => Kind.refusedAsPageDeleted,
       RetiredFormat() => Kind.retired,
     },
@@ -274,20 +272,6 @@ final rows = <Row>[
         point: tick(),
       ),
     );
-  }),
-  Row('needs user: an edit waiting for a row whose page is gone', () {
-    final client = Client()
-      ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
-    final attempt = client.claim(['first']);
-    client.must(
-      OpAnswered(
-        attempt,
-        const AppliedAnswer('first', revision: 3, life: fixtureLife),
-        point: tick(),
-      ),
-    );
-    client.edit(onVisible(client.visible, movePatch('x', x: 70)));
-    return client..arrive(const PageGone('page-a'));
   }),
   Row('a format this build no longer sends', () {
     final client = Client();
@@ -669,8 +653,11 @@ String renderTable() {
       'justified at the revision it names, with the content the user saw (or '
       'already holding what the op writes). Otherwise it waits for the '
       'row\'s result, and needs the user when a result of this session shows '
-      'the row otherwise, when a result of its page no longer holds a row '
-      'that results showed or this device added, or when its page is gone.',
+      'the row otherwise, or when a result of its page no longer holds a row '
+      'that results showed or this device added. Once a current result shows '
+      'its page gone, it names the revision the user saw instead of waiting '
+      'for its row; its other holds and the resend window still apply, a '
+      'delete goes in its checked form, and the server\'s answer settles it.',
     )
     ..writeln(
       '- A page add, reorder or delete answers only the strategy revision, so '
@@ -722,8 +709,10 @@ String renderTable() {
       'strategy itself is gone nothing retires. A delete this device made '
       'stays known as its own until a result shows a later revision of the '
       'row or its page is gone that way. '
-      'An undo onto a page that is gone asks the user, with that reason, '
-      'whether or not this device\'s delete is still drawn.',
+      'An undo onto a page that is gone goes through every check a put-back '
+      'has: this device\'s delete on record, at the revision the undo names, '
+      'and inside its resend window. The result that shows the page gone '
+      'also retires that delete, so in practice the undo asks the user.',
     )
     ..writeln()
     ..writeln('## Which copy of a row a result leaves held')

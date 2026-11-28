@@ -466,7 +466,10 @@ final class FakeServer {
       );
     return HeaderRead(
       strategy: held.strategy as StrategyRow,
-      pages: [for (final page in pages) lived(page)],
+      pages: [
+        for (final page in pages)
+          if (page is! TrashedPage) lived(page),
+      ],
       settings: [
         for (final row in held.settings)
           if (held.page(row.pagePublicId) is! TrashedPage) lived(row),
@@ -503,7 +506,7 @@ final class FakeServer {
       );
     }
     final pageRow = held.page(page);
-    if (pageRow == null) return notFound(page);
+    if (pageRow == null || pageRow is TrashedPage) return notFound(page);
     return StoreReadAnswered(
       PageRead(
         page: lived(pageRow),
