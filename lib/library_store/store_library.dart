@@ -331,6 +331,7 @@ final class StoreLibrary {
             source: 'libraryStore.summariesWrittenBack',
             promptUser: false,
           );
+          await _readAgain();
         case SaveInDoubt(:final failure):
           AppErrorReporter.reportError(
             'The library store lost the answer to writing back the summaries '

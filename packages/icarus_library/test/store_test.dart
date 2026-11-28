@@ -7,13 +7,17 @@ import 'package:icarus_library/src/store/layout.dart'
 import 'package:icarus_library/src/store/store.dart' show storeFormatProblem;
 import 'package:test/test.dart';
 
+import 'cloud_store_support.dart';
+import 'cloud_support.dart';
 import 'store_support.dart';
 import 'support.dart';
 
 Map<String, Object?> stored(Contents contents, String area, String key) =>
     jsonDecode(contents[area]![key]!) as Map<String, Object?>;
 
-Contents agedSeeded(Contents seeded) {
+Contents agedSeeded(Contents seeded) => agedSummary(seeded, strategyId);
+
+Contents agedSummary(Contents seeded, String strategyId) {
   final written =
       jsonDecode(seeded['library']![summaryName(strategyId)]!)
           as Map<String, Object?>;
@@ -1189,7 +1193,7 @@ void main() {
       });
 
       test(
-          'a save asked for while the write-back runs waits its turn and its '
+          'a save asked for after the write-back waits its turn and its '
           'summary is the one kept', () async {
         final disk = MemoryStorage(agedSeeded(seeded));
         final store = await openStore(MemoryEngine(disk));
@@ -1232,6 +1236,28 @@ void main() {
         final next = await openStore(MemoryEngine(disk));
         expect(next.summariesRebuiltAtOpen, 0);
         expect(listOf(next).strategies.single, saved);
+        await next.close();
+      });
+
+      test(
+          'a cloud strategy\'s rebuilt summary is never written back: its '
+          'standing depends on the build, so each open rebuilds it', () async {
+        final storage = MemoryStorage();
+        final cloud = await openCloudStore(MemoryEngine(storage));
+        await addCloud(cloud, initialRows());
+        await cloud.close();
+        final aged = MemoryStorage(agedSummary(storage.contents, strategyId));
+
+        final store = await openCloudStore(MemoryEngine(aged));
+        expect(store.summariesRebuiltAtOpen, 1);
+        expect(
+          await store.writeBackRebuiltSummaries(),
+          isA<NothingToSave<int, Never>>(),
+        );
+        await store.close();
+
+        final next = await openCloudStore(MemoryEngine(aged));
+        expect(next.summariesRebuiltAtOpen, 1);
         await next.close();
       });
 

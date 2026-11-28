@@ -1899,7 +1899,10 @@ final class LibraryStore {
       return NotSaved(failure);
     }
     final rebuilt = {
-      for (final digest in _unsaved) digest: ?_summaries[digest],
+      for (final digest in _unsaved)
+        if (_summaries[digest] case final summary?
+            when summary.sync is KeptHere)
+          digest: summary,
     };
     if (rebuilt.isEmpty) return const NothingToSave();
     return _commit<int, Never>(

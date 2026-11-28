@@ -134,8 +134,9 @@ void main() {
   });
 
   test(
-      'a rename saved before the first frame keeps its name, and the '
-      'write-back after it leaves nothing to rebuild', () async {
+      'a rename asked for before the first frame takes its turn first and '
+      'keeps its name, and the write-back after it leaves nothing to rebuild',
+      () async {
     await ageTheStore();
     final firstFrame = Completer<void>();
     final container = await open(firstFrame: firstFrame.future);
@@ -209,6 +210,47 @@ void main() {
       ['a', 'b'],
     );
     await close(container);
+  });
+
+  test(
+      'a library no longer served when the first frame comes writes nothing '
+      'back, though its store is still open', () async {
+    await ageTheStore();
+    final firstFrame = Completer<void>();
+    final gate = CommitGate();
+    final container = await open(firstFrame: firstFrame.future, gate: gate);
+    final served = LocalLibrary.source;
+
+    LocalLibrary.source = const LibraryNotOpened();
+    firstFrame.complete();
+    await settle();
+
+    expect(gate.commits, 0);
+    LocalLibrary.source = served;
+    await close(container);
+    expect(await rebuiltOnOpen(), 2);
+  });
+
+  test(
+      'a store that stopped answering before the write-back shows the '
+      'could-not-open face, not a library that only fails at the next save',
+      () async {
+    await ageTheStore();
+    final firstFrame = Completer<void>();
+    final gate = CommitGate();
+    final container = await open(firstFrame: firstFrame.future, gate: gate);
+
+    gate.ended = true;
+    firstFrame.complete();
+    final stopAt = DateTime.now().add(const Duration(seconds: 5));
+    while (container.read(libraryOnStoreProvider) is! LibraryNotServed &&
+        DateTime.now().isBefore(stopAt)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(container.read(libraryOnStoreProvider), isA<LibraryNotServed>());
+    expect(LocalLibrary.source, isA<LibraryNotOpened>());
+    container.dispose();
   });
 
   test(
