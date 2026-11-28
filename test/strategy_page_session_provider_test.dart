@@ -1689,6 +1689,20 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
 
+  late Directory strategyFiles;
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  setUpAll(() async {
+    strategyFiles =
+        await Directory.systemTemp.createTemp('icarus-page-session-files-');
+  });
+  setUp(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (_) async => strategyFiles.path));
+  tearDownAll(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+    await strategyFiles.delete(recursive: true);
+  });
+
   test('cloud strategy metadata patch carries the remote shell revision',
       () async {
     final page = _page('page-1', 0);
