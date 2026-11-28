@@ -309,8 +309,17 @@ class _PictureResponse extends Stream<List<int>>
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<void> _letLoadsFinishInRealTime(WidgetTester tester) async {
-  for (var i = 0; i < 10; i++) {
+Future<void> _pumpInRealTimeUntil(
+  WidgetTester tester,
+  String awaited,
+  bool Function() holds, {
+  Duration atMost = const Duration(seconds: 30),
+}) async {
+  final elapsed = Stopwatch()..start();
+  while (!holds()) {
+    if (elapsed.elapsed > atMost) {
+      fail('Waited ${atMost.inSeconds} s of real time for $awaited.');
+    }
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
@@ -904,7 +913,13 @@ void main() {
           connection: connection.stream,
         ));
         connection.add(false);
-        await _letLoadsFinishInRealTime(tester);
+        await _pumpInRealTimeUntil(
+          tester,
+          'the offline request to fail and show Image unavailable',
+          () =>
+              host.requests > 0 &&
+              find.text('Image unavailable').evaluate().isNotEmpty,
+        );
 
         expect(host.requests, 1);
         expect(find.text('Image unavailable'), findsOneWidget);
@@ -916,7 +931,13 @@ void main() {
 
         host.reachable = true;
         connection.add(true);
-        await _letLoadsFinishInRealTime(tester);
+        await _pumpInRealTimeUntil(
+          tester,
+          'the picture to paint once the connection is back',
+          () =>
+              _pictureShown(tester) &&
+              find.text('Image unavailable').evaluate().isEmpty,
+        );
 
         expect(host.requests, 2);
         expect((_paintedImage(tester) as NetworkImage).url, _remoteUrl);
@@ -944,14 +965,24 @@ void main() {
           assets: [_asset()],
           connection: Stream.value(false),
         ));
-        await _letLoadsFinishInRealTime(tester);
+        await _pumpInRealTimeUntil(
+          tester,
+          'the offline picture to show Image unavailable',
+          () => find.text('Image unavailable').evaluate().isNotEmpty,
+        );
         expect(find.text('Image unavailable'), findsOneWidget);
 
         await tester.runAsync(() => _writeImage(storage));
         ProviderScope.containerOf(tester.element(find.byType(ImageWidget)))
             .read(cloudMediaCacheProvider.notifier)
             .resetStrategy('strategy-1');
-        await _letLoadsFinishInRealTime(tester);
+        await _pumpInRealTimeUntil(
+          tester,
+          'the picture to paint from the file written to disk',
+          () =>
+              _pictureShown(tester) &&
+              find.text('Image unavailable').evaluate().isEmpty,
+        );
 
         expect(_paintedImage(tester), isA<FileImage>());
         expect(find.text('Image unavailable'), findsNothing);
