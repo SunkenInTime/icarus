@@ -105,6 +105,7 @@ void main() {
   appProviderContainer = container;
   final strategies = container.read(strategyProvider.notifier);
   setUp(openUnitHive);
+  tearDown(closeUnitHive);
 
   testWidgets(
       'a cloud strategy New Strategy made, whose open fails after it was '
