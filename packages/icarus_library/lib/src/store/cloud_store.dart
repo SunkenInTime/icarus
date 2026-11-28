@@ -389,7 +389,10 @@ PageTally _tallyOn(
 ) {
   final loaded = strategy.loadedPage(digestOf(pageId));
   return PageTally.count(
-    elements: rows.elementsOn(pageId),
+    elements: rows.elementsOn(pageId).map((row) {
+      storeWork.rowsTallied++;
+      return row;
+    }),
     lineupGroups: rows.lineupGroupsOn(pageId),
     damaged: loaded?.unplaced.length ?? 0,
     newer: loaded?.unknownKinds.length ?? 0,
@@ -947,6 +950,8 @@ extension _CloudStore on LibraryStore {
       return StorageFailed(failure);
     }
     final base = _baseRows(strategy, header, digests);
+    storeWork.rowsMadeVisible +=
+        base.elements.length + base.lineupGroups.length;
     if (queue == null) return Done(base);
     return Done(_throughReader(base, visibleOver(base, queue, pages)));
   }
@@ -1375,6 +1380,7 @@ extension _CloudStore on LibraryStore {
     _Taken? taken,
   }) async {
     final results = taken ?? _Taken();
+    storeWork.rowsDecided += decisions.length;
     final strategy = cloud.strategy;
     final digest = strategy.digest;
     final area = strategy.area;
@@ -1521,6 +1527,17 @@ extension _CloudStore on LibraryStore {
         cloud.queue.current = next;
         _sessions[digest] = (session: next.session, shown: next.shown);
         return Saved(take(summary));
+      }
+      for (final write in writes) {
+        switch (write) {
+          case _PutRow():
+            storeWork.rowsWritten++;
+          case _PutGroup(:final text):
+            storeWork.groupsWritten++;
+            storeWork.groupCharsWritten += text.length;
+          case _:
+            break;
+        }
       }
       final result = await _commit<T, CommitRefusal>(writes, () {
         _written(disk, owner, next, groups, encoded, role, results);

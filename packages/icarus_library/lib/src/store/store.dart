@@ -37,6 +37,12 @@ final class StoreWork {
   int resultGroupsEncoded = 0;
   int rowsEncoded = 0;
   int rowsCompared = 0;
+  int rowsDecided = 0;
+  int rowsWritten = 0;
+  int groupsWritten = 0;
+  int groupCharsWritten = 0;
+  int rowsMadeVisible = 0;
+  int rowsTallied = 0;
   int Function() sessionRecords = () => 0;
   Set<String> Function() strategiesInMemory = () => const {};
   Set<String> Function() queuesInMemory = () => const {};
@@ -46,6 +52,12 @@ final class StoreWork {
     resultGroupsEncoded = 0;
     rowsEncoded = 0;
     rowsCompared = 0;
+    rowsDecided = 0;
+    rowsWritten = 0;
+    groupsWritten = 0;
+    groupCharsWritten = 0;
+    rowsMadeVisible = 0;
+    rowsTallied = 0;
   }
 }
 

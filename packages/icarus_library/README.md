@@ -2292,6 +2292,32 @@ scratch, and the first result after the store reopens. The measuring code is
 compile exe` leaves out SQLite's native library, so the store cannot open in
 that build.
 
+`dart build cli -t bin/store_cost.dart -o build/store_cost` builds the
+store cost table ahead of time, and `build/store_cost/bundle/bin/store_cost`
+prints it, on SQLite, at 300 and 3,000 items. Run it in release on the PC when
+a change touches how the store takes results, commits or reads a page, and put
+the table in the PR beside the one from before the change.
+
+The first part, medians of 31, is one moved item on a page of the
+`take_cost.dart` mix. It covers the player's own edit, step by step: committed
+into the store, claimed, the applied answer, and its page result landing. Then
+it covers a teammate's move arriving as a live page result. For each step it
+gives:
+- the time, and how much of it was spent waiting on the SQLite isolate;
+- how many rows the store decided on, and how many rows it wrote;
+- how many result groups it wrote, and their characters;
+- how many rows it made visible, the base rows of the pages it read back;
+- how many rows its summary tallied.
+
+The counts come from `storeWork`, the counters the store keeps as it works.
+They show which path a step took; the time alone cannot.
+
+The second part, medians of 15 runs each after closing and reopening the
+store, reads a cloud strategy of 300 and 3,000 items on one page and on ten.
+It gives the store open, `readStrategy`, the first page, and their sum. It
+also gives every page read cold, a page read again warm, and the SQLite wait.
+The code is `lib/store_cost.dart`.
+
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are
 1000-point drawings (in a strategy not yet read, and in one already read),
