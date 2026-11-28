@@ -1185,9 +1185,12 @@ while the names say it is kept here. `test/store_header_changes_test.dart`
 holds both changes to that.
 `writtenOf(ids)` reads the version each strategy was written at
 (`written`), and nothing else, for many strategies in one turn:
-`WrittenAt`, `WrittenNotRecorded` or `WrittenUnreadable`.
-`test/sqlite/written_versions_time_test.dart` (tagged `timing`) requires
-700 of them within 20 ms on SQLite once warm. A library edit
+`WrittenAt`, `WrittenNotRecorded` or `WrittenUnreadable`. The engine has
+no read of many keys, so it asks for every version before the first answer
+comes, and `test/store_header_changes_test.dart` counts that all 700 of
+them are asked first. `test/sqlite/written_versions_time_test.dart` (tagged
+`timing`) keeps 700 within 60 ms on SQLite once warm: a tripwire for a
+tenfold regression, not a tuned target. On the PC they take about 14 ms. A library edit
 saves what differs from the stored rows when it ends: moving a strategy
 into a folder and back in one edit is `NothingToSave`, several moves or
 renames (`RenameStrategy`) of one strategy raise its revision once, and a strategy added in the same

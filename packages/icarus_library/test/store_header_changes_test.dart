@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
@@ -28,6 +30,23 @@ Map<String, String> _otherRows(Contents contents) => {
 
 StrategySummary _listed(LibraryStore store, String id) =>
     listOf(store).strategies.singleWhere((summary) => summary.publicId == id);
+
+final class _HeldVersions extends ForwardingLease {
+  _HeldVersions(super.inner);
+
+  final released = Completer<void>();
+  int asked = 0;
+  int answered = 0;
+
+  @override
+  Future<KeyRead> read(String area, String key) async {
+    if (key != 'written') return super.read(area, key);
+    asked++;
+    await released.future;
+    answered++;
+    return super.read(area, key);
+  }
+}
 
 void main() {
   test('moving or renaming a strategy kept here reads its header and the '
@@ -252,5 +271,42 @@ void main() {
     expect(written['unrecorded'], isA<WrittenNotRecorded>());
     expect(written['malformed'], isA<WrittenUnreadable>());
     await reopened.close();
+  });
+
+  test('every one of 700 written versions is asked of the engine before the '
+      'first is answered, in one turn', () async {
+    final ids = [for (var i = 0; i < 700; i++) 'held-$i'];
+    final storage = MemoryStorage();
+    final filling = await openStore(MemoryEngine(storage));
+    savedValue(
+      await filling.editLibrary([
+        for (final id in ids)
+          AddStrategy(sampleStrategy(id: id, prefix: '$id-'), writtenAt: 40),
+      ]),
+    );
+    await filling.close();
+    late _HeldVersions lease;
+    final store = await openStore(
+      WrappingEngine(
+        MemoryEngine(storage),
+        (inner) => lease = _HeldVersions(inner),
+      ),
+    );
+
+    final reading = store.writtenOf(ids);
+    await pumpEventQueue();
+    expect(lease.asked, ids.length);
+    expect(lease.answered, 0);
+    lease.released.complete();
+
+    expect(
+      await reading,
+      isA<Done<Map<String, StrategyWritten>>>().having(
+        (done) => done.value.values.whereType<WrittenAt>().length,
+        'versions',
+        ids.length,
+      ),
+    );
+    await store.close();
   });
 }

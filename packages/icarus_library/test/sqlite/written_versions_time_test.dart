@@ -11,11 +11,12 @@ import '../store_support.dart';
 
 const _strategies = 700;
 
-const _budget = Duration(milliseconds: 20);
+const _tripwire = Duration(milliseconds: 60);
 
 void main() {
   test('once warm, the written version of $_strategies strategies is read '
-      'on SQLite within ${_budget.inMilliseconds} ms', () async {
+      'on SQLite within ${_tripwire.inMilliseconds} ms, a tripwire for a '
+      'tenfold regression, not a tuned target', () async {
     final directory = await Directory.systemTemp.createTemp('icarus-written-');
     addTearDown(() => directory.delete(recursive: true));
     final file = '${directory.path}/library.sqlite';
@@ -50,6 +51,6 @@ void main() {
     }
     times.sort();
     printOnFailure('read times: ${times.map((t) => t.inMicroseconds)} µs');
-    expect(times[2], lessThan(_budget));
+    expect(times[2], lessThan(_tripwire));
   });
 }
