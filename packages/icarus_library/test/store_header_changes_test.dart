@@ -169,6 +169,42 @@ void main() {
     await reopened.close();
   });
 
+  test('a strategy listed in another folder than its own row says is listed '
+      'where the row says after one edit moves it away and back', () async {
+    final storage = MemoryStorage();
+    final filling = await openStore(MemoryEngine(storage));
+    savedValue(
+      await filling.editLibrary([
+        PutFolder(ReadableFolder(publicId: 'folder-a', name: 'A')),
+        PutFolder(ReadableFolder(publicId: 'folder-b', name: 'B')),
+        PutFolder(ReadableFolder(publicId: 'folder-c', name: 'C')),
+        AddStrategy(sampleStrategy()),
+        const MoveStrategy(strategyId, 'folder-b'),
+      ]),
+    );
+    await filling.close();
+    final contents = editable(storage.contents);
+    final name = summaryName(strategyId);
+    contents['library']![name] = canonicalJson({
+      ...jsonDecode(contents['library']![name]!) as Map<String, Object?>,
+      'folderPublicId': 'folder-a',
+    });
+    final disk = MemoryStorage(contents);
+    final store = await openStore(MemoryEngine(disk));
+
+    savedValue(
+      await store.editLibrary([
+        const MoveStrategy(strategyId, 'folder-c'),
+        const MoveStrategy(strategyId, 'folder-b'),
+      ]),
+    );
+    await store.close();
+
+    final reopened = await openOn(disk.contents);
+    expect(_listed(reopened, strategyId).folderPublicId, 'folder-b');
+    await reopened.close();
+  });
+
   test('renaming a strategy back to its stored name in the same edit writes '
       'nothing', () async {
     final (store, counts, _) = await _countedOn(await seededClean());

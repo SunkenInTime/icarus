@@ -2574,10 +2574,7 @@ final class _LibraryEdit {
       KeepValue() => current.folderPublicId,
     };
     if (current.name == targetName && current.folderPublicId == targetFolder) {
-      if (summary.name != current.name ||
-          summary.folderPublicId != current.folderPublicId) {
-        _putSummary(summary.withHeader(current));
-      }
+      _summaryAgreeing(digest, current, summary);
       return const _Next();
     }
     final added = _added[strategyPublicId];
@@ -2597,7 +2594,7 @@ final class _LibraryEdit {
         header.folderPublicId == targetFolder) {
       _headers[strategyPublicId] = header;
       _putSummaries.remove(digest);
-      _summaries[digest] = headerSummary;
+      _summaryAgreeing(digest, header, headerSummary);
       return const _Next();
     }
     final now = _storedPrecision(_store._clock());
@@ -2616,6 +2613,19 @@ final class _LibraryEdit {
     _headers[strategyPublicId] = changed;
     _putSummary(headerSummary.withHeader(changed));
     return const _Next();
+  }
+
+  void _summaryAgreeing(
+    String digest,
+    ReadableStrategy header,
+    StrategySummary summary,
+  ) {
+    final agreeing = summary.withHeader(header);
+    if (agreeing == summary) {
+      _summaries[digest] = summary;
+    } else {
+      _putSummary(agreeing);
+    }
   }
 
   Future<Reading<StrategyRow>> _header(String strategyPublicId) async {
