@@ -155,6 +155,56 @@ void main() {
       expect(client.effects, contains(isA<OpRemoved>()));
     });
 
+    test(
+      'known behaviour, not covered: my field edit, then my delete, '
+      'while a teammate moves the item to page B and sets that field to '
+      'the same value in one write; my edit lands as a no-op at their '
+      'revision, so my checked delete names it and deletes the item on B',
+      () {
+        final server = Server();
+        final client = quietClient()..read(server.rows);
+        hold(client, 1000, heldAt);
+        final fields = FieldMerge(fields: ['position']);
+        client.edit(movePatch('field', x: 40, merge: fields));
+        client.edit(elementDelete('drop', expected: 2));
+        server.rows = aTrashed(
+          withOp(
+            server.rows,
+            ElementPatchOp(
+              opId: 'their-move',
+              elementPublicId: 'e1',
+              expectedElementRevision: 1,
+              pagePublicId: 'page-b',
+              payload: movePatch('theirs', x: 40).payload,
+              sortIndex: 5,
+            ),
+          ),
+        );
+        final field = claimAt(client, ['field'], live);
+        final fieldAnswer = server.apply(clientId, field.ops.single);
+        expect(fieldAnswer, isA<NoopAnswer>());
+        client.must(OpAnswered(field.attempt, fieldAnswer, point: tick()));
+        client.arrive(headerReadOf(server.rows));
+        final drop = claimAt(client, ['drop'], live).ops.single;
+        expect((drop as ElementDeleteOp).lastWriterWins, isFalse);
+        expect(drop.expectedElementRevision, 2);
+        expect(server.apply(clientId, drop), isA<AppliedAnswer>());
+        expect(server.rows.element('e1'), isA<DeletedElement>());
+        expect(server.rows.element('e1')!.pagePublicId, 'page-b');
+      },
+    );
+
+    test('known behaviour, main\'s: once the store has read the item on '
+        'page B, a live delete is last writer wins and deletes it there', () {
+      final (:client, :server, seenAt: _) = deleteWaiting(behindOwn: false);
+      server.rows = aTrashed(movedToB(server.rows));
+      client.read(server.rows);
+      final sent = claimAt(client, ['drop'], live).ops.single;
+      expect((sent as ElementDeleteOp).lastWriterWins, isTrue);
+      expect(server.apply(clientId, sent), isA<AppliedAnswer>());
+      expect(server.rows.element('e1')!.pagePublicId, 'page-b');
+    });
+
     test('while page A stays on the live list, a delete sent live is last '
         'writer wins, as on main', () {
       final (:client, :server, seenAt: _) = deleteWaiting(behindOwn: false);
